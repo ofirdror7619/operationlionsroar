@@ -99,16 +99,14 @@ export class MenuScene extends Phaser.Scene {
       this.completeTypewriter();
     });
 
-    this.add.text(panelLeft + 8, 26, "TACTICAL HUD", {
+    this.add.text(hudX, 26, "WARZONE VIEW", {
       fontFamily: "'Teko', 'Impact', sans-serif",
       fontSize: "31px",
       color: "#c9d6e6",
       stroke: "#09101a",
       strokeThickness: 5,
-      letterSpacing: 1,
-      fixedWidth: HUD_PANEL_WIDTH - 16,
-      align: "center"
-    }).setOrigin(0, 0.5);
+      letterSpacing: 1
+    }).setOrigin(0.5, 0.5);
 
     this.startButton = this.add
       .rectangle(hudX, 142, HUD_PANEL_WIDTH - 34, 58, 0x85703e, 0.97)

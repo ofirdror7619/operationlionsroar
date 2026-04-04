@@ -8,7 +8,9 @@ export class EnemySpawner {
     this.group = group;
     this.timer = null;
     this.enemyOptions = options.enemyOptions ?? {};
+    this.enemyTextureKeys = options.enemyTextureKeys ?? ["enemy", "enemy-grenade"];
     this.spawnPoints = options.spawnPoints ?? DEFAULT_SPAWN_POINTS;
+    this.lastSpawnPointId = null;
 
     this.enemyTypeConfigs = {
       ...DEFAULT_ENEMY_TYPE_CONFIGS,
@@ -46,14 +48,19 @@ export class EnemySpawner {
       return;
     }
 
-    const point = Phaser.Utils.Array.GetRandom(this.spawnPoints);
+    const eligiblePoints = this.spawnPoints.filter((point) => point.id !== this.lastSpawnPointId);
+    const point = Phaser.Utils.Array.GetRandom(eligiblePoints.length > 0 ? eligiblePoints : this.spawnPoints);
+    this.lastSpawnPointId = point.id ?? null;
     const enemyTypeConfig = this.enemyTypeConfigs[point.enemyType ?? "default"] ?? this.enemyTypeConfigs.default;
+    const availableTextureKeys = this.enemyTextureKeys.filter((key) => this.scene.textures.exists(key));
+    const textureKey = availableTextureKeys.length > 0 ? Phaser.Utils.Array.GetRandom(availableTextureKeys) : "enemy";
     const playWidth = this.scene.playWidth ?? this.scene.scale.width;
     const x = playWidth * point.x;
     const y = this.scene.scale.height * point.y;
     const enemy = new Enemy(this.scene, x, y, {
       ...this.enemyOptions,
       ...enemyTypeConfig,
+      textureKey,
       flipX: point.side === "right",
       targetHeight: this.scene.scale.height * point.height,
       lowerBodyHideRatio: point.lowerBodyHideRatio ?? 0,
