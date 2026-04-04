@@ -6,16 +6,16 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image("bg", "src/assets/images/background.png");
-    this.load.image("health-bar", "src/assets/images/health-bar.png");
-    this.load.image("weapon-m203", "src/assets/images/m-203.png");
-    this.load.image("magazine", "src/assets/images/magazine.png");
-    this.load.image("medikit", "src/assets/images/medikit.png");
-    this.load.audio("bg-music", "src/assets/audio/music.mp3");
-    this.load.audio("ak47-fire", "src/assets/audio/ak-47.mp3");
-    this.load.audio("m203-fire", "src/assets/audio/m-203.mp3");
-    this.load.audio("m203-grenade", "src/assets/audio/m-203-grenade.mp3");
-    this.load.spritesheet("enemy", "src/assets/images/enemy.png", {
+    this.load.image("bg", "assets/images/background.png");
+    this.load.image("health-bar", "assets/images/health-bar.png");
+    this.load.image("weapon-m203", "assets/images/m-203.png");
+    this.load.image("magazine", "assets/images/magazine.png");
+    this.load.image("medikit", "assets/images/medikit.png");
+    this.load.audio("bg-music", "assets/audio/music.mp3");
+    this.load.audio("ak47-fire", "assets/audio/ak-47.mp3");
+    this.load.audio("m203-fire", "assets/audio/m-203.mp3");
+    this.load.audio("m203-grenade", "assets/audio/m-203-grenade.mp3");
+    this.load.spritesheet("enemy", "assets/images/enemy.png", {
       frameWidth: 384,
       frameHeight: 1024
     });
