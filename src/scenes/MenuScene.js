@@ -40,8 +40,7 @@ export class MenuScene extends Phaser.Scene {
       "The mission is simple:\n" +
       "secure the area... eliminate all hostile forces.\n\n" +
       "Every shadow could be your last.\n" +
-      "Every second counts.\n\n" +
-      "Stay sharp. Stay alive.";
+      "Every second counts. Stay sharp. Stay alive.";
     this.typewriterCursor = 0;
 
     this.add.image(playWidth / 2, height / 2, "bg").setDisplaySize(playWidth, height);

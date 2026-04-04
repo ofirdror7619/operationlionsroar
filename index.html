@@ -26,10 +26,63 @@
         width: 100%;
         height: 100%;
       }
+
+      #page-credit {
+        position: fixed;
+        left: 10px;
+        bottom: 10px;
+        transform: none;
+        text-align: left;
+        font-family: "Teko", "Impact", sans-serif;
+        color: #d8e9f8;
+        font-size: 30px;
+        letter-spacing: 1px;
+        background: rgba(0, 0, 0, 0.55);
+        padding: 2px 12px;
+        border-radius: 6px;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+        z-index: 20;
+        pointer-events: none;
+      }
     </style>
   </head>
   <body>
     <div id="app"></div>
+    <div id="page-credit">Operation Lion's Roar (2026) - By Ofir Dror</div>
+    <script>
+      (() => {
+        const GAME_WIDTH = 960;
+        const LEFT_PADDING = 10;
+        const BOTTOM_PADDING = 10;
+
+        const creditEl = document.getElementById("page-credit");
+
+        const updateCreditPosition = () => {
+          const canvas = document.querySelector("#app canvas");
+          if (!canvas || !creditEl) {
+            return;
+          }
+
+          const rect = canvas.getBoundingClientRect();
+          creditEl.style.left = `${rect.left + LEFT_PADDING}px`;
+          creditEl.style.bottom = `${Math.max(0, window.innerHeight - rect.bottom + BOTTOM_PADDING)}px`;
+        };
+
+        const waitForCanvasAndStart = () => {
+          const canvas = document.querySelector("#app canvas");
+          if (!canvas) {
+            requestAnimationFrame(waitForCanvasAndStart);
+            return;
+          }
+
+          updateCreditPosition();
+          window.addEventListener("resize", updateCreditPosition);
+          setInterval(updateCreditPosition, 500);
+        };
+
+        waitForCanvasAndStart();
+      })();
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
