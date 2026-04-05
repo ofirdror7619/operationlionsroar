@@ -47,6 +47,10 @@ const WEAPON_TILT_X_KICK = 0;
 const WEAPON_TILT_IN_MS = 38;
 const WEAPON_TILT_OUT_MS = 110;
 const WEAPON_GRENADE_ANIM_FPS = 10;
+const WEAPON_AIM_FOLLOW_X_MAX = 26;
+const WEAPON_AIM_FOLLOW_Y_MAX = 18;
+const WEAPON_AIM_FOLLOW_ANGLE_MAX = 5;
+const WEAPON_AIM_FOLLOW_LERP = 0.2;
 const UI_DISPLAY_FONT = "'Barlow Condensed', 'Teko', sans-serif";
 
 export class GameScene extends Phaser.Scene {
@@ -88,6 +92,9 @@ export class GameScene extends Phaser.Scene {
     this.weaponSpriteSheetKey = "weapon-m203-sheet";
     this.weaponBaseX = 0;
     this.weaponBaseY = 0;
+    this.weaponAimTargetX = 0;
+    this.weaponAimTargetY = 0;
+    this.weaponAimTargetAngle = 0;
   }
 
   init(data = {}) {
@@ -258,6 +265,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.updateMagMode();
+    this.updateWeaponAimFollow();
     this.checkLevelEnd();
     const pointer = this.input.activePointer;
     if (this.isMagModeActive() && pointer?.isDown && !pointer.rightButtonDown()) {
@@ -1247,7 +1255,9 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.weaponSprite.setPosition(this.weaponBaseX, this.weaponBaseY);
+    this.updateWeaponAimTarget();
+    this.weaponSprite.setPosition(this.weaponAimTargetX, this.weaponAimTargetY);
+    this.weaponSprite.setAngle(this.weaponAimTargetAngle);
     this.applyWeaponCrop(this.weaponSprite.frame);
   }
 
@@ -1328,10 +1338,39 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // Keep weapon fully anchored; smoothness comes from frame animation only.
+    // Keep weapon movement driven by scope-follow, not recoil tweening.
     this.tweens.killTweensOf(this.weaponSprite);
-    this.weaponSprite.setAngle(0);
-    this.weaponSprite.setPosition(this.weaponBaseX, this.weaponBaseY);
+    this.resetWeaponPosition();
+  }
+
+  updateWeaponAimTarget() {
+    const aimX = Phaser.Math.Clamp(this.crosshair?.x ?? this.input.activePointer?.worldX ?? this.playWidth * 0.5, 0, this.playWidth);
+    const aimY = Phaser.Math.Clamp(
+      this.crosshair?.y ?? this.input.activePointer?.worldY ?? this.scale.height * 0.5,
+      0,
+      this.scale.height
+    );
+    const normalizedX = ((aimX / this.playWidth) - 0.5) * 2;
+    const normalizedY = ((aimY / this.scale.height) - 0.5) * 2;
+    this.weaponAimTargetX = this.weaponBaseX + normalizedX * WEAPON_AIM_FOLLOW_X_MAX;
+    this.weaponAimTargetY = this.weaponBaseY + normalizedY * WEAPON_AIM_FOLLOW_Y_MAX;
+    this.weaponAimTargetAngle = normalizedX * WEAPON_AIM_FOLLOW_ANGLE_MAX + normalizedY * 1.5;
+  }
+
+  updateWeaponAimFollow() {
+    if (!this.weaponSprite?.active) {
+      return;
+    }
+
+    if (this.isMagModeActive()) {
+      return;
+    }
+
+    this.updateWeaponAimTarget();
+    const t = WEAPON_AIM_FOLLOW_LERP;
+    this.weaponSprite.x = Phaser.Math.Linear(this.weaponSprite.x, this.weaponAimTargetX, t);
+    this.weaponSprite.y = Phaser.Math.Linear(this.weaponSprite.y, this.weaponAimTargetY, t);
+    this.weaponSprite.angle = Phaser.Math.Linear(this.weaponSprite.angle, this.weaponAimTargetAngle, t);
   }
 
   showEnemyMuzzleFlash(enemy) {
