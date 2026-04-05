@@ -1,6 +1,9 @@
 import Phaser from "phaser";
 import { HUD_PANEL_WIDTH, PLAY_WIDTH } from "../game/config";
 
+const UI_DISPLAY_FONT = "'Barlow Condensed', 'Teko', sans-serif";
+const UI_BODY_FONT = "'Chakra Petch', 'Share Tech Mono', monospace";
+
 export class HudScene extends Phaser.Scene {
   constructor() {
     super("hud");
@@ -36,10 +39,9 @@ export class HudScene extends Phaser.Scene {
     this.createPanel();
     this.createCrosshair();
     this.createWeaponCard();
+    this.createBottomResourceCounters();
     const valueTextStyle = this.getTextStyle("21px");
     this.scoreText = this.add.text(this.contentValueX, 290 + this.statsTopOffset, "0", valueTextStyle).setOrigin(1, 0);
-    this.ammoText = this.add.text(this.contentValueX, 354 + this.statsTopOffset, "100", valueTextStyle).setOrigin(1, 0);
-    this.grenadeText = this.add.text(this.contentValueX, 418 + this.statsTopOffset, "3", valueTextStyle).setOrigin(1, 0);
     this.healthText = this.add.text(this.contentValueX, 482 + this.statsTopOffset, "100", valueTextStyle).setOrigin(1, 0);
     this.livesText = this.add
       .text(this.contentValueX, 522 + this.statsTopOffset + this.livesRowOffset, "3", valueTextStyle)
@@ -55,18 +57,18 @@ export class HudScene extends Phaser.Scene {
       .setVisible(false);
 
     this.continueButton = this.add
-      .rectangle(PLAY_WIDTH / 2, this.scale.height / 2 + 84, 300, 54, 0x7d5a2a, 0.98)
-      .setStrokeStyle(2, 0xe9d4a5, 0.9)
+      .rectangle(PLAY_WIDTH / 2, this.scale.height / 2 + 84, 300, 54, 0x1f7f77, 0.98)
+      .setStrokeStyle(2, 0x8fe3dd, 0.92)
       .setDepth(100)
       .setVisible(false)
       .setInteractive({ useHandCursor: true });
 
     this.continueButtonLabel = this.add
       .text(this.continueButton.x, this.continueButton.y, "CONTINUE", {
-        fontFamily: "'Teko', 'Impact', sans-serif",
+        fontFamily: UI_DISPLAY_FONT,
         fontSize: "34px",
-        color: "#1a140d",
-        letterSpacing: 2
+        color: "#04171b",
+        letterSpacing: 3
       })
       .setOrigin(0.5)
       .setDepth(101)
@@ -74,12 +76,12 @@ export class HudScene extends Phaser.Scene {
 
     this.continueButton.on("pointerover", () => {
       if (this.continueButton?.visible) {
-        this.continueButton.setFillStyle(0x947041, 1);
+        this.continueButton.setFillStyle(0x2b968d, 1);
       }
     });
     this.continueButton.on("pointerout", () => {
       if (this.continueButton?.visible) {
-        this.continueButton.setFillStyle(0x7d5a2a, 0.98);
+        this.continueButton.setFillStyle(0x1f7f77, 0.98);
       }
     });
     this.continueButton.on("pointerup", () => {
@@ -98,7 +100,7 @@ export class HudScene extends Phaser.Scene {
       }
       this.scoreText.setText(`${Math.floor(state.score)}`);
       this.ammoText.setText(`${Math.floor(state.ammo)}`);
-      this.grenadeText.setText(`${Math.floor(state.grenades)}`);
+      this.grenadeText.setText(`x${Math.floor(state.grenades)}`);
       this.healthText.setText(`${Math.floor(state.hp)}`);
       this.livesText.setText(`${Math.floor(state.lives)}`);
       const isMagMode = state.weaponMode === "mag";
@@ -138,11 +140,12 @@ export class HudScene extends Phaser.Scene {
 
   getTextStyle(size = "24px") {
     return {
-      fontFamily: "Verdana",
+      fontFamily: UI_DISPLAY_FONT,
       fontSize: size,
-      color: "#ffffff",
-      stroke: "#000000",
-      strokeThickness: 4
+      color: "#edf5ff",
+      stroke: "#07111b",
+      strokeThickness: 4,
+      letterSpacing: 1
     };
   }
 
@@ -150,8 +153,8 @@ export class HudScene extends Phaser.Scene {
     const displayHeight = this.scale.height * 0.64;
     const source = this.textures.get("health-bar").getSourceImage();
     const displayWidth = displayHeight * (source.width / source.height);
-    const x = this.scale.width - displayWidth * 0.5 - 6;
-    const y = this.scale.height - displayHeight * 0.5 - 8;
+    const x = displayWidth * 0.5 + 10;
+    const y = this.scale.height * 0.5;
 
     this.lifeBarSourceWidth = source.width;
     this.lifeBarSourceHeight = source.height;
@@ -194,21 +197,21 @@ export class HudScene extends Phaser.Scene {
     this.contentValueX = this.contentRight - 12;
 
     const bg = this.add.graphics();
-    bg.fillGradientStyle(0x0f1727, 0x121c30, 0x0a1222, 0x0e182b, 1);
+    bg.fillGradientStyle(0x0d1828, 0x121f31, 0x0d1523, 0x101a2b, 1);
     bg.fillRect(panelLeft, 0, HUD_PANEL_WIDTH, this.scale.height);
 
     const frame = this.add.graphics();
-    frame.lineStyle(2, 0x314766, 0.85);
+    frame.lineStyle(2, 0x3a5678, 0.88);
     frame.strokeRect(panelLeft + 2, 2, HUD_PANEL_WIDTH - 4, this.scale.height - 4);
-    frame.lineStyle(1, 0x1f2f4a, 0.8);
+    frame.lineStyle(1, 0x223753, 0.8);
     frame.strokeRect(panelLeft + 8, 8, HUD_PANEL_WIDTH - 16, this.scale.height - 16);
 
     const glow = this.add.graphics();
-    glow.fillStyle(0x3f77c7, 0.13);
+    glow.fillStyle(0x5b8ccf, 0.16);
     glow.fillEllipse(this.contentCenterX, 26, (this.contentRight - this.contentLeft) * 1.05, 54);
 
     const grid = this.add.graphics();
-    grid.lineStyle(1, 0x2f4362, 0.22);
+    grid.lineStyle(1, 0x385273, 0.2);
     for (let y = 0; y <= this.scale.height; y += 26) {
       grid.lineBetween(this.contentLeft, y, panelRight - 10, y);
     }
@@ -221,24 +224,60 @@ export class HudScene extends Phaser.Scene {
     sheen.fillTriangle(panelLeft, 0, panelLeft + HUD_PANEL_WIDTH * 0.46, 0, panelLeft, this.scale.height);
 
     this.add.text(panelCenterX, 26, "WARZONE VIEW", {
-      fontFamily: "'Teko', 'Impact', sans-serif",
+      fontFamily: UI_DISPLAY_FONT,
       fontSize: "31px",
-      color: "#c9d6e6",
-      stroke: "#09101a",
+      color: "#d7e9fb",
+      stroke: "#07111b",
       strokeThickness: 5,
-      letterSpacing: 1
+      letterSpacing: 2
     }).setOrigin(0.5, 0.5);
 
     this.add.image(this.contentLeft + 14, 302 + this.statsTopOffset, "icon-score").setScale(0.72);
-    this.add.image(this.contentLeft + 14, 366 + this.statsTopOffset, "icon-ammo").setScale(0.72);
-    this.add.image(this.contentLeft + 14, 430 + this.statsTopOffset, "icon-grenade").setScale(0.72);
     this.add.image(this.contentLeft + 14, 494 + this.statsTopOffset, "icon-health").setScale(0.72);
+    this.add.image(this.contentLeft + 14, 526 + this.statsTopOffset + this.livesRowOffset, "heart-pickup").setDisplaySize(40, 40);
 
     this.add.text(this.contentLeft, 266 + this.statsTopOffset, "SCORE", this.getLabelStyle());
-    this.add.text(this.contentLeft, 330 + this.statsTopOffset, "BULLETS", this.getLabelStyle());
-    this.add.text(this.contentLeft, 394 + this.statsTopOffset, "GRENADES", this.getLabelStyle());
     this.add.text(this.contentLeft, 458 + this.statsTopOffset, "HEALTH", this.getLabelStyle());
     this.add.text(this.contentLeft, 498 + this.statsTopOffset + this.livesRowOffset, "LIVES", this.getLabelStyle());
+  }
+
+  createBottomResourceCounters() {
+    const y = this.scale.height - 26;
+    const resourceIconSize = 68;
+    const ammoBox = this.add
+      .rectangle(112, y, 206, 62, 0x09131e, 0.88)
+      .setStrokeStyle(2, 0x3e84b8, 0.78)
+      .setDepth(260)
+      .setOrigin(0.5);
+    this.add.image(44, y, "magazine").setDisplaySize(resourceIconSize, resourceIconSize).setDepth(261);
+    this.ammoText = this.add
+      .text(82, y, "100", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "40px",
+        color: "#e5f1ff",
+        stroke: "#041017",
+        strokeThickness: 5
+      })
+      .setDepth(261)
+      .setOrigin(0, 0.52);
+
+    const grenadeX = PLAY_WIDTH - 88;
+    const grenadeBox = this.add
+      .rectangle(grenadeX, y, 164, 62, 0x09131e, 0.88)
+      .setStrokeStyle(2, 0x3e84b8, 0.78)
+      .setDepth(260)
+      .setOrigin(0.5);
+    this.add.image(grenadeX - 52, y, "grenade-pickup").setDisplaySize(resourceIconSize, resourceIconSize).setDepth(261);
+    this.grenadeText = this.add
+      .text(grenadeX - 14, y, "x3", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "40px",
+        color: "#e5f1ff",
+        stroke: "#041017",
+        strokeThickness: 5
+      })
+      .setDepth(261)
+      .setOrigin(0, 0.52);
   }
 
   createCrosshair() {
@@ -254,11 +293,12 @@ export class HudScene extends Phaser.Scene {
 
   getLabelStyle() {
     return {
-      fontFamily: "Verdana",
+      fontFamily: UI_BODY_FONT,
       fontSize: "14px",
-      color: "#89a8d1",
-      stroke: "#000000",
-      strokeThickness: 3
+      color: "#8db9df",
+      stroke: "#07111b",
+      strokeThickness: 3,
+      letterSpacing: 1
     };
   }
 
@@ -269,17 +309,17 @@ export class HudScene extends Phaser.Scene {
     this.weaponNameText = this.add.text(this.contentLeft, 80, "M-203", this.getTextStyle("24px"));
     this.weaponImage = this.add.image(this.contentCenterX, topY, "weapon-m203").setDisplaySize(contentWidth + 14, 90);
     this.add.text(this.contentLeft, 176, "Right Click:", {
-      fontFamily: "Verdana",
+      fontFamily: UI_BODY_FONT,
       fontSize: "12px",
-      color: "#d4e2f8",
-      stroke: "#000000",
+      color: "#cde2f5",
+      stroke: "#07111b",
       strokeThickness: 3
     });
     this.add.text(this.contentLeft, 192, "Grenades", {
-      fontFamily: "Verdana",
+      fontFamily: UI_BODY_FONT,
       fontSize: "12px",
-      color: "#d4e2f8",
-      stroke: "#000000",
+      color: "#cde2f5",
+      stroke: "#07111b",
       strokeThickness: 3
     });
   }

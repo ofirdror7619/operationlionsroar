@@ -3,11 +3,10 @@ import { BootScene } from "../scenes/BootScene";
 import { PreloadScene } from "../scenes/PreloadScene";
 import { MenuScene } from "../scenes/MenuScene";
 import { GameScene } from "../scenes/GameScene";
-import { HudScene } from "../scenes/HudScene";
 
 export const GAME_WIDTH = 960;
 export const GAME_HEIGHT = 540;
-export const HUD_PANEL_WIDTH = 180;
+export const HUD_PANEL_WIDTH = 0;
 export const PLAY_WIDTH = GAME_WIDTH - HUD_PANEL_WIDTH;
 
 export const gameConfig = {
@@ -23,7 +22,7 @@ export const gameConfig = {
       debug: false
     }
   },
-  scene: [BootScene, PreloadScene, MenuScene, GameScene, HudScene],
+  scene: [BootScene, PreloadScene, MenuScene, GameScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH

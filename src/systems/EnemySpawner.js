@@ -55,8 +55,25 @@ export class EnemySpawner {
     const availableTextureKeys = this.enemyTextureKeys.filter((key) => this.scene.textures.exists(key));
     const textureKey = availableTextureKeys.length > 0 ? Phaser.Utils.Array.GetRandom(availableTextureKeys) : "enemy";
     const playWidth = this.scene.playWidth ?? this.scene.scale.width;
-    const x = playWidth * point.x;
-    const y = this.scene.scale.height * point.y;
+    const x = Math.round(playWidth * point.x);
+    const y = Math.round(this.scene.scale.height * point.y);
+    const minSpawnDistance = Math.max(90, this.scene.scale.height * 0.13);
+    let isOccupied = false;
+    this.group.children.each((existingEnemy) => {
+      if (isOccupied || !existingEnemy?.active) {
+        return;
+      }
+
+      const distance = Phaser.Math.Distance.Between(existingEnemy.x, existingEnemy.y, x, y);
+      if (distance < minSpawnDistance) {
+        isOccupied = true;
+      }
+    });
+
+    if (isOccupied) {
+      return;
+    }
+
     const enemy = new Enemy(this.scene, x, y, {
       ...this.enemyOptions,
       ...enemyTypeConfig,
@@ -64,6 +81,8 @@ export class EnemySpawner {
       flipX: point.side === "right",
       targetHeight: this.scene.scale.height * point.height,
       lowerBodyHideRatio: point.lowerBodyHideRatio ?? 0,
+      bottomTrimRatio: point.bottomTrimRatio,
+      enableLowerBodyOcclusion: (point.lowerBodyHideRatio ?? 0) > 0,
       idleDurationMs: Phaser.Math.Between(250, 900)
     });
     this.group.add(enemy);

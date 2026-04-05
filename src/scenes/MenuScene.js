@@ -3,6 +3,8 @@ import { HUD_PANEL_WIDTH, PLAY_WIDTH } from "../game/config";
 
 const MUSIC_LOOP_START_SECONDS = 15;
 const MUSIC_LOOP_MARKER = "main-loop";
+const UI_DISPLAY_FONT = "'Barlow Condensed', 'Teko', sans-serif";
+const UI_BODY_FONT = "'Chakra Petch', 'Share Tech Mono', monospace";
 
 export class MenuScene extends Phaser.Scene {
   constructor() {
@@ -14,6 +16,7 @@ export class MenuScene extends Phaser.Scene {
     this.briefingText = null;
     this.startButton = null;
     this.startLabel = null;
+    this.startBlinkTween = null;
     this.canStart = false;
   }
 
@@ -24,7 +27,6 @@ export class MenuScene extends Phaser.Scene {
     const playWidth = PLAY_WIDTH;
     const panelLeft = playWidth;
     const panelRight = playWidth + HUD_PANEL_WIDTH;
-    const hudX = playWidth + HUD_PANEL_WIDTH / 2;
     const healthLaneWidth = 54;
     const contentLeft = panelLeft + 14;
     const contentRight = panelRight - healthLaneWidth - 16;
@@ -44,51 +46,55 @@ export class MenuScene extends Phaser.Scene {
     this.typewriterCursor = 0;
 
     this.add.image(playWidth / 2, height / 2, "bg").setDisplaySize(playWidth, height);
-    this.add.rectangle(playWidth / 2, height / 2, playWidth, height, 0x0f0b07, 0.7);
-    const hudBg = this.add.graphics();
-    hudBg.fillGradientStyle(0x0f1727, 0x121c30, 0x0a1222, 0x0e182b, 1);
-    hudBg.fillRect(panelLeft, 0, HUD_PANEL_WIDTH, height);
+    this.add.rectangle(playWidth / 2, height / 2, playWidth, height, 0x080d14, 0.46);
+    this.add.rectangle(playWidth * 0.2, height * 0.28, playWidth * 0.5, height * 0.5, 0x2a5a82, 0.12);
+    this.add.rectangle(playWidth * 0.8, height * 0.8, playWidth * 0.44, height * 0.36, 0xa06824, 0.11);
+    if (HUD_PANEL_WIDTH > 0) {
+      const hudBg = this.add.graphics();
+      hudBg.fillGradientStyle(0x0d1828, 0x121f31, 0x0d1523, 0x101a2b, 1);
+      hudBg.fillRect(panelLeft, 0, HUD_PANEL_WIDTH, height);
 
-    const hudFrame = this.add.graphics();
-    hudFrame.lineStyle(2, 0x314766, 0.85);
-    hudFrame.strokeRect(panelLeft + 2, 2, HUD_PANEL_WIDTH - 4, height - 4);
-    hudFrame.lineStyle(1, 0x1f2f4a, 0.8);
-    hudFrame.strokeRect(panelLeft + 8, 8, HUD_PANEL_WIDTH - 16, height - 16);
+      const hudFrame = this.add.graphics();
+      hudFrame.lineStyle(2, 0x3a5678, 0.88);
+      hudFrame.strokeRect(panelLeft + 2, 2, HUD_PANEL_WIDTH - 4, height - 4);
+      hudFrame.lineStyle(1, 0x223753, 0.8);
+      hudFrame.strokeRect(panelLeft + 8, 8, HUD_PANEL_WIDTH - 16, height - 16);
 
-    const hudGlow = this.add.graphics();
-    hudGlow.fillStyle(0x3f77c7, 0.13);
-    hudGlow.fillEllipse(contentCenterX, 26, (contentRight - contentLeft) * 1.05, 54);
+      const hudGlow = this.add.graphics();
+      hudGlow.fillStyle(0x5b8ccf, 0.16);
+      hudGlow.fillEllipse(contentCenterX, 26, (contentRight - contentLeft) * 1.05, 54);
 
-    const hudGrid = this.add.graphics();
-    hudGrid.lineStyle(1, 0x2f4362, 0.22);
-    for (let y = 0; y <= height; y += 26) {
-      hudGrid.lineBetween(contentLeft, y, panelRight - 10, y);
+      const hudGrid = this.add.graphics();
+      hudGrid.lineStyle(1, 0x385273, 0.2);
+      for (let y = 0; y <= height; y += 26) {
+        hudGrid.lineBetween(contentLeft, y, panelRight - 10, y);
+      }
+      for (let x = contentLeft; x <= panelRight - 10; x += 20) {
+        hudGrid.lineBetween(x, 10, x, height - 10);
+      }
+
+      const hudSheen = this.add.graphics();
+      hudSheen.fillStyle(0xffffff, 0.04);
+      hudSheen.fillTriangle(panelLeft, 0, panelLeft + HUD_PANEL_WIDTH * 0.46, 0, panelLeft, height);
     }
-    for (let x = contentLeft; x <= panelRight - 10; x += 20) {
-      hudGrid.lineBetween(x, 10, x, height - 10);
-    }
-
-    const hudSheen = this.add.graphics();
-    hudSheen.fillStyle(0xffffff, 0.04);
-    hudSheen.fillTriangle(panelLeft, 0, panelLeft + HUD_PANEL_WIDTH * 0.46, 0, panelLeft, height);
 
     this.add
       .text(playWidth / 2, 52, "OPERATION LION'S ROAR", {
-        fontFamily: "'Teko', 'Impact', sans-serif",
-        fontSize: "56px",
-        color: "#f4dcc0",
-        stroke: "#1c130c",
-        strokeThickness: 8,
-        letterSpacing: 2
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "62px",
+        color: "#dfedf9",
+        stroke: "#08121d",
+        strokeThickness: 7,
+        letterSpacing: 3
       })
       .setOrigin(0.5);
 
     this.briefingText = this.add
       .text(64, 100, "", {
-        fontFamily: "'Share Tech Mono', 'Courier New', monospace",
-        fontSize: "22px",
-        color: "#d9d2bf",
-        lineSpacing: 8,
+        fontFamily: UI_BODY_FONT,
+        fontSize: "21px",
+        color: "#d4e1ef",
+        lineSpacing: 9,
         wordWrap: { width: playWidth - 128 }
       })
       .setOrigin(0, 0)
@@ -98,27 +104,18 @@ export class MenuScene extends Phaser.Scene {
       this.completeTypewriter();
     });
 
-    this.add.text(hudX, 26, "WARZONE VIEW", {
-      fontFamily: "'Teko', 'Impact', sans-serif",
-      fontSize: "31px",
-      color: "#c9d6e6",
-      stroke: "#09101a",
-      strokeThickness: 5,
-      letterSpacing: 1
-    }).setOrigin(0.5, 0.5);
-
     this.startButton = this.add
-      .rectangle(hudX, 142, HUD_PANEL_WIDTH - 34, 58, 0x85703e, 0.97)
-      .setStrokeStyle(2, 0xead8aa, 0.9)
+      .rectangle(playWidth / 2, height - 120, 226, 52, 0x1f7f77, 0.97)
+      .setStrokeStyle(2, 0x8fe3dd, 0.95)
       .setVisible(false)
       .setInteractive({ useHandCursor: true });
 
     this.startLabel = this.add
       .text(this.startButton.x, this.startButton.y, "START", {
-        fontFamily: "'Teko', 'Impact', sans-serif",
-        fontSize: "40px",
-        color: "#1b1711",
-        letterSpacing: 2
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "34px",
+        color: "#05181c",
+        letterSpacing: 3
       })
       .setOrigin(0.5)
       .setVisible(false);
@@ -127,9 +124,9 @@ export class MenuScene extends Phaser.Scene {
       if (!this.canStart) {
         return;
       }
-      this.startButton.setFillStyle(0x9f8751, 1);
+      this.startButton.setFillStyle(0x2d978d, 1);
     });
-    this.startButton.on("pointerout", () => this.startButton.setFillStyle(0x85703e, 0.97));
+    this.startButton.on("pointerout", () => this.startButton.setFillStyle(0x1f7f77, 0.97));
     this.startButton.on("pointerup", () => {
       if (this.canStart) {
         this.startGame();
@@ -185,6 +182,17 @@ export class MenuScene extends Phaser.Scene {
   }
 
   revealStartButton() {
+    const buttonHalfHeight = this.startButton.height * 0.5;
+    const textToButtonGap = 14;
+    const creditTopY = this.scale.height - 72;
+    const buttonToCreditGap = 4;
+
+    let minButtonY = this.briefingText.y + this.briefingText.height + textToButtonGap + buttonHalfHeight;
+    let maxButtonY = creditTopY - buttonToCreditGap - buttonHalfHeight;
+
+    const buttonY = Phaser.Math.Clamp((minButtonY + maxButtonY) * 0.5, minButtonY, maxButtonY);
+    this.startButton.setPosition(PLAY_WIDTH / 2, buttonY);
+    this.startLabel.setPosition(this.startButton.x, this.startButton.y);
     this.canStart = true;
     this.startButton.setVisible(true);
     this.startLabel.setVisible(true);
@@ -194,6 +202,16 @@ export class MenuScene extends Phaser.Scene {
       duration: 280,
       ease: "Quad.Out"
     });
+
+    this.startBlinkTween?.remove();
+    this.startBlinkTween = this.tweens.add({
+      targets: this.startLabel,
+      alpha: { from: 1, to: 0.45 },
+      duration: 950,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.InOut"
+    });
   }
 
   startGame() {
@@ -202,10 +220,11 @@ export class MenuScene extends Phaser.Scene {
     }
 
     this.hasStarted = true;
+    this.startBlinkTween?.remove();
+    this.startBlinkTween = null;
     this.typingEvent?.remove(false);
     this.typingEvent = null;
     this.scene.start("game");
-    this.scene.launch("hud");
   }
 
   startBackgroundMusic() {
