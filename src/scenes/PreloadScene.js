@@ -272,16 +272,60 @@ export class PreloadScene extends Phaser.Scene {
 
   createUiTextures() {
     const scope = this.make.graphics({ x: 0, y: 0, add: false });
-    scope.lineStyle(2, 0xffffff, 0.92);
-    scope.strokeCircle(64, 64, 44);
-    scope.lineStyle(1, 0xffffff, 0.55);
-    scope.strokeCircle(64, 64, 30);
-    scope.lineBetween(64, 4, 64, 44);
-    scope.lineBetween(64, 84, 64, 124);
-    scope.lineBetween(4, 64, 44, 64);
-    scope.lineBetween(84, 64, 124, 64);
-    scope.fillStyle(0xff3e3e, 0.9);
-    scope.fillCircle(64, 64, 2);
+    const cx = 64;
+    const cy = 64;
+
+    // Subtle glow layers
+    scope.lineStyle(7, 0x67d9ff, 0.08);
+    scope.strokeCircle(cx, cy, 49);
+    scope.lineStyle(4, 0x67d9ff, 0.15);
+    scope.strokeCircle(cx, cy, 46);
+
+    // Main ring and inner ring
+    scope.lineStyle(2, 0xd8f3ff, 0.92);
+    scope.strokeCircle(cx, cy, 44);
+    scope.lineStyle(1, 0x95d9ff, 0.7);
+    scope.strokeCircle(cx, cy, 30);
+
+    // Segmented ring markers
+    scope.lineStyle(2, 0xb4e9ff, 0.92);
+    scope.lineBetween(cx, 8, cx, 19);
+    scope.lineBetween(cx, 109, cx, 120);
+    scope.lineBetween(8, cy, 19, cy);
+    scope.lineBetween(109, cy, 120, cy);
+    scope.lineStyle(1, 0xb4e9ff, 0.75);
+    scope.lineBetween(cx - 28, 16, cx - 22, 22);
+    scope.lineBetween(cx + 22, 22, cx + 28, 16);
+    scope.lineBetween(cx - 28, 112, cx - 22, 106);
+    scope.lineBetween(cx + 22, 106, cx + 28, 112);
+
+    // Precision crosshair with center gap
+    scope.lineStyle(1, 0xe8f8ff, 0.95);
+    scope.lineBetween(cx, 22, cx, 56);
+    scope.lineBetween(cx, 72, cx, 106);
+    scope.lineBetween(22, cy, 56, cy);
+    scope.lineBetween(72, cy, 106, cy);
+
+    // Range aid marks and bottom chevron
+    scope.lineStyle(1, 0x9fdefa, 0.82);
+    scope.lineBetween(cx - 14, cy + 20, cx + 14, cy + 20);
+    scope.lineBetween(cx - 9, cy + 26, cx + 9, cy + 26);
+    scope.lineStyle(2, 0x8ee5d9, 0.9);
+    scope.lineBetween(cx - 8, cy + 12, cx, cy + 18);
+    scope.lineBetween(cx + 8, cy + 12, cx, cy + 18);
+
+    // Center lock ring and hit point
+    scope.lineStyle(1, 0xffffff, 0.9);
+    scope.strokeCircle(cx, cy, 4);
+    scope.fillStyle(0xff5d6e, 0.95);
+    scope.fillCircle(cx, cy, 1.8);
+
+    // Tiny side notches for style/readability
+    scope.fillStyle(0xcff2ff, 0.85);
+    scope.fillRect(cx - 1, 19, 2, 2);
+    scope.fillRect(cx - 1, 107, 2, 2);
+    scope.fillRect(19, cy - 1, 2, 2);
+    scope.fillRect(107, cy - 1, 2, 2);
     scope.generateTexture("scope", 128, 128);
     scope.destroy();
 
