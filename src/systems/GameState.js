@@ -5,7 +5,7 @@ export class GameState {
     this.score = 0;
     this.maxAmmo = 100;
     this.ammo = this.maxAmmo;
-    this.grenades = 3;
+    this.grenades = 0;
     this.hp = this.maxHp;
     this.lives = this.maxLives;
   }
@@ -14,12 +14,13 @@ export class GameState {
     this.score += value;
   }
 
-  consumeAmmo() {
-    if (this.ammo <= 0) {
+  consumeAmmo(amount = 1) {
+    const requestedAmount = Math.max(1, Math.floor(amount));
+    if (this.ammo < requestedAmount) {
       return false;
     }
 
-    this.ammo -= 1;
+    this.ammo -= requestedAmount;
     return true;
   }
 

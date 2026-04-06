@@ -32,6 +32,7 @@ const LEVEL_2_KILL_TARGET = 40;
 const BASE_FIRE_COOLDOWN_MS = 150;
 const MAG_FIRE_COOLDOWN_MS = 70;
 const MAG_AIM_ASSIST_RADIUS = 44;
+const TAVOR_AIM_ASSIST_RADIUS = 50;
 const ENEMY_FIRE_DAMAGE = 12;
 const GRENADE_ENEMY_FIRE_DAMAGE = 18;
 const BASE_ENEMY_AIM_DURATION_MS = 3000;
@@ -62,6 +63,9 @@ const LOW_HP_THRESHOLD = 30;
 const LOW_AMMO_THRESHOLD = 12;
 const COMBO_RESET_WINDOW_MS = 2200;
 const KILL_FEED_MAX_ITEMS = 4;
+const RETRY_BUTTON_BASE_TINT = 0xff788a;
+const RETRY_BUTTON_HOVER_TINT = 0xff96a7;
+const RETRY_BUTTON_GLOW_TINT = 0xff4d66;
 
 export class GameScene extends Phaser.Scene {
   constructor() {
@@ -82,6 +86,7 @@ export class GameScene extends Phaser.Scene {
     this.lastShotAtMs = -99999;
     this.magTimerText = null;
     this.magFireSound = null;
+    this.tavorFireSound = null;
     this.objectiveText = null;
     this.objectiveTextMaxWidth = 0;
     this.objectivePanel = null;
@@ -102,6 +107,9 @@ export class GameScene extends Phaser.Scene {
     this.grenadeText = null;
     this.grenadeIcons = [];
     this.grenadeOverflowText = null;
+    this.grenadeHudIcon = null;
+    this.grenadeSweep = null;
+    this.grenadeHudBackdropNodes = [];
     this.lifeBarSegments = [];
     this.lastAmmoValue = -1;
     this.lastAmmoSegmentCount = -1;
@@ -119,6 +127,22 @@ export class GameScene extends Phaser.Scene {
     this.failTextFlickerTween = null;
     this.failGlitchGhostLeft = null;
     this.failGlitchGhostRight = null;
+    this.abortButton = null;
+    this.abortButtonLabel = null;
+    this.abortConfirmOverlay = null;
+    this.abortConfirmFrame = null;
+    this.abortConfirmPanel = null;
+    this.abortConfirmTitle = null;
+    this.abortConfirmSubtitle = null;
+    this.abortConfirmBody = null;
+    this.abortConfirmDivider = null;
+    this.abortConfirmHint = null;
+    this.abortConfirmStayButton = null;
+    this.abortConfirmStayGlow = null;
+    this.abortConfirmStayLabel = null;
+    this.abortConfirmLeaveButton = null;
+    this.abortConfirmLeaveGlow = null;
+    this.abortConfirmLeaveLabel = null;
     this.backgroundImage = null;
     this.failBackgroundBlurFx = null;
     this.isLowHpPulseActive = false;
@@ -137,11 +161,23 @@ export class GameScene extends Phaser.Scene {
     this.grenadePanel = null;
     this.healthPanel = null;
     this.weaponSpriteSheetKey = "weapon-m203-sheet";
+    this.selectedWeaponId = "m203";
+    this.ownedWeaponIds = [];
+    this.isOwnedMagWeaponViewActive = false;
+    this.isTavorWeaponViewActive = false;
+    this.isCustomM203WeaponViewActive = false;
+    this.weaponIdleAnimKey = "weapon-m203-idle";
+    this.weaponFireAnimKey = "weapon-m203-fire";
+    this.weaponGrenadeAnimKey = "weapon-m203-grenade";
     this.weaponBaseX = 0;
     this.weaponBaseY = 0;
     this.weaponAimTargetX = 0;
     this.weaponAimTargetY = 0;
     this.weaponAimTargetAngle = 0;
+    this.weaponRecoilX = 0;
+    this.weaponRecoilY = 0;
+    this.weaponRecoilAngle = 0;
+    this.hasContinuedAfterMissionComplete = false;
   }
 
   init(data = {}) {
@@ -154,6 +190,7 @@ export class GameScene extends Phaser.Scene {
     this.state = new GameState();
     this.gameOver = false;
     this.levelComplete = false;
+    this.hasContinuedAfterMissionComplete = false;
     this.killCount = 0;
     this.magModeEndsAt = 0;
     this.hasSpawnedMagWeaponPickup = false;
@@ -186,15 +223,20 @@ export class GameScene extends Phaser.Scene {
       .setVisible(false);
 
     this.createObjectiveBanner();
+    this.createAbortButton();
     this.createPlayerPowerIndicators?.();
     this.createForegroundVignette();
     this.createMissionFailScreen?.();
+    this.createAbortConfirmScreen();
     this.startHudIntro();
     this.startHudBreathing();
 
     this.magFireSound = this.sound.add("mag-fire", {
       volume: 0.55,
       loop: true
+    });
+    this.tavorFireSound = this.sound.add("tavor-fire", {
+      volume: 0.55
     });
 
     this.spawner = new EnemySpawner(this, this.enemies, {
@@ -221,9 +263,14 @@ export class GameScene extends Phaser.Scene {
 
     this.input.setDefaultCursor("none");
     this.input.mouse?.disableContextMenu();
+    this.state.grenades = this.getStoredGrenadeCount();
     this.emitHudUpdate();
 
     this.input.on("pointerdown", (pointer) => {
+      if (this.isAbortConfirmVisible()) {
+        return;
+      }
+
       if (this.gameOver) {
         return;
       }
@@ -243,6 +290,21 @@ export class GameScene extends Phaser.Scene {
 
     this.input.on("pointerup", () => {
       this.stopMagFireSound();
+    });
+    this.input.keyboard.on("keydown-ESC", () => {
+      if (this.isAbortConfirmVisible()) {
+        this.hideAbortConfirmScreen();
+        return;
+      }
+
+      this.abortMission();
+    });
+    this.input.on("wheel", (_pointer, _gameObjects, _deltaX, deltaY) => {
+      if (this.gameOver || this.levelComplete || this.isAbortConfirmVisible()) {
+        return;
+      }
+
+      this.switchWeaponByWheel(deltaY);
     });
     this.gameStatusText = this.add
       .text(this.playWidth / 2, this.scale.height * 0.45, "", {
@@ -287,13 +349,18 @@ export class GameScene extends Phaser.Scene {
       .setBlendMode(Phaser.BlendModes.ADD);
 
     this.retryButton = this.add
-      .rectangle(this.playWidth / 2, this.scale.height / 2 + 88, 248, 60, 0xba1f2f, 0.98)
-      .setStrokeStyle(3, 0xff9cab, 0.95)
+      .image(this.playWidth / 2, this.scale.height / 2 + 88, "hud-counter-grenade-panel")
+      .setDisplaySize(248, 60)
+      .setTint(RETRY_BUTTON_BASE_TINT)
+      .setAlpha(0.98)
       .setDepth(1504)
       .setVisible(false)
       .setInteractive({ useHandCursor: true });
     this.retryButtonGlow = this.add
-      .rectangle(this.retryButton.x, this.retryButton.y, 270, 76, 0xff5269, 0)
+      .image(this.retryButton.x, this.retryButton.y, "hud-counter-grenade-panel")
+      .setDisplaySize(278, 74)
+      .setTint(RETRY_BUTTON_GLOW_TINT)
+      .setAlpha(0)
       .setDepth(1503)
       .setVisible(false)
       .setBlendMode(Phaser.BlendModes.ADD);
@@ -311,7 +378,7 @@ export class GameScene extends Phaser.Scene {
       if (this.retryButton?.visible) {
         this.stopRetryButtonPulse();
         this.retryButtonHoverTween?.stop();
-        this.retryButton.setFillStyle(0xd22a3c, 1);
+        this.retryButton.setTint(RETRY_BUTTON_HOVER_TINT).setAlpha(1);
         this.retryButtonGlow?.setAlpha(0.5);
         this.retryButtonHoverTween = this.tweens.add({
           targets: [this.retryButton, this.retryButtonLabel].filter(Boolean),
@@ -325,7 +392,7 @@ export class GameScene extends Phaser.Scene {
     this.retryButton.on("pointerout", () => {
       if (this.retryButton?.visible) {
         this.retryButtonHoverTween?.stop();
-        this.retryButton.setFillStyle(0xba1f2f, 0.98);
+        this.retryButton.setTint(RETRY_BUTTON_BASE_TINT).setAlpha(0.98);
         this.retryButtonGlow?.setAlpha(0.32);
         this.tweens.add({
           targets: [this.retryButton, this.retryButtonLabel].filter(Boolean),
@@ -374,7 +441,7 @@ export class GameScene extends Phaser.Scene {
 
   update(_time, delta) {
     this.updateComboWindow();
-    if (this.gameOver || this.levelComplete) {
+    if (this.gameOver || this.levelComplete || this.isAbortConfirmVisible()) {
       return;
     }
 
@@ -388,15 +455,16 @@ export class GameScene extends Phaser.Scene {
 
     this.updateMagMode();
     this.updateWeaponAimFollow();
+    this.updateObjectiveText();
     this.checkLevelEnd();
     const pointer = this.input.activePointer;
-    if (this.isMagModeActive() && pointer?.isDown && !pointer.rightButtonDown()) {
+    if (this.isMagFiringMechanicActive() && pointer?.isDown && !pointer.rightButtonDown()) {
       this.tryShoot(pointer);
     }
   }
 
   tryShoot(pointer) {
-    const cooldownMs = this.isMagModeActive() ? MAG_FIRE_COOLDOWN_MS : BASE_FIRE_COOLDOWN_MS;
+    const cooldownMs = this.isMagFiringMechanicActive() ? MAG_FIRE_COOLDOWN_MS : BASE_FIRE_COOLDOWN_MS;
     const nowMs = this.time.now;
     if (nowMs - this.lastShotAtMs < cooldownMs) {
       return;
@@ -412,7 +480,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const isMagMode = this.isMagModeActive();
-    if (!isMagMode && !this.state.consumeAmmo()) {
+    if (!isMagMode && !this.state.consumeAmmo(this.getAmmoCostPerShot())) {
       this.playEmptyFireSound();
       this.cameras.main.shake(80, 0.002);
       this.emitHudUpdate();
@@ -422,7 +490,8 @@ export class GameScene extends Phaser.Scene {
     this.playFireSound();
     this.playWeaponActionAnimation("fire");
 
-    const didHitEnemy = this.tryKillEnemyAt(pointer.worldX, pointer.worldY, isMagMode);
+    const aimAssistRadius = this.getAimAssistRadius();
+    const didHitEnemy = this.tryKillEnemyAt(pointer.worldX, pointer.worldY, aimAssistRadius > 0, aimAssistRadius);
     let didHit = didHitEnemy;
 
     if (!didHit) {
@@ -448,7 +517,7 @@ export class GameScene extends Phaser.Scene {
     this.playCrosshairShotFeedback(didHitEnemy, false);
   }
 
-  tryKillEnemyAt(worldX, worldY, allowAimAssist = false) {
+  tryKillEnemyAt(worldX, worldY, allowAimAssist = false, aimAssistRadius = MAG_AIM_ASSIST_RADIUS) {
     let targetEnemy = null;
     let didDirectHit = false;
     this.enemies.children.each((enemy) => {
@@ -470,7 +539,7 @@ export class GameScene extends Phaser.Scene {
         }
 
         const distance = Phaser.Math.Distance.Between(worldX, worldY, enemy.x, enemy.y);
-        if (distance <= MAG_AIM_ASSIST_RADIUS && distance < closestDistance) {
+        if (distance <= aimAssistRadius && distance < closestDistance) {
           closestDistance = distance;
           targetEnemy = enemy;
         }
@@ -482,7 +551,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     const isHeadshot = didDirectHit ? this.isHeadshotHit(targetEnemy, worldY) : false;
-    const killSource = this.isMagModeActive() ? "FN-MAG-58" : "M-203";
+    const killSource = this.isMagFiringMechanicActive()
+      ? "FN-MAG-58"
+      : this.isTavorMechanicActive()
+        ? "TAVOR TAR-21"
+        : "M-203";
     return this.killEnemy(targetEnemy, { isHeadshot, killSource });
   }
 
@@ -491,10 +564,16 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    if (!this.canUseGrenades()) {
+      this.cameras.main.shake(80, 0.0018);
+      return;
+    }
+
     if (!this.state.consumeGrenade()) {
       this.cameras.main.shake(110, 0.0025);
       return;
     }
+    this.syncGrenadesToRegistry();
 
     this.playGrenadeSound();
     this.playWeaponActionAnimation("grenade");
@@ -744,6 +823,7 @@ export class GameScene extends Phaser.Scene {
         didCollect = true;
         pickup.destroy();
         this.state.addGrenades(GRENADE_PICKUP_REWARD);
+        this.syncGrenadesToRegistry();
         this.emitHudUpdate();
         this.showGrenadePickupText(worldX, worldY);
       }
@@ -814,6 +894,10 @@ export class GameScene extends Phaser.Scene {
 
   trySpawnMagWeaponPickupDrop(originX, originY) {
     if (!this.magWeaponPickups) {
+      return;
+    }
+
+    if (this.isMagFiringMechanicActive()) {
       return;
     }
 
@@ -1038,23 +1122,59 @@ export class GameScene extends Phaser.Scene {
   }
 
   continueToNextChallenge() {
-    if (!this.levelComplete || this.gameOver) {
+    if (!this.levelComplete || this.gameOver || this.hasContinuedAfterMissionComplete) {
       return;
     }
 
+    this.hasContinuedAfterMissionComplete = true;
+    const currentBudget = this.getStoredBudget();
+    const missionCompletionReward = this.getMissionCompletionReward();
+    this.registry.set("playerBudget", currentBudget + missionCompletionReward);
+    const nextMissionId = Phaser.Math.Clamp(this.levelId + 1, 1, 3);
+    this.registry.set("currentMissionId", nextMissionId);
+    this.registry.set("operationCenterNotice", `MISSION COMPLETE +$${missionCompletionReward}`);
     this.hideMissionFailScreen?.();
-    this.scene.restart({ levelId: this.levelId + 1 });
+    this.scene.start("operation-center");
+  }
+
+  getMissionCompletionReward() {
+    const completedLevel = Math.max(1, Math.floor(this.levelId || 1));
+    return completedLevel * 1000;
+  }
+
+  getStoredGrenadeCount() {
+    const grenadesFromRegistry = this.registry.get("playerGrenades");
+    if (typeof grenadesFromRegistry !== "number" || !Number.isFinite(grenadesFromRegistry)) {
+      return 0;
+    }
+
+    return Math.max(0, Math.floor(grenadesFromRegistry));
+  }
+
+  syncGrenadesToRegistry() {
+    this.registry.set("playerGrenades", Math.max(0, Math.floor(this.state?.grenades ?? 0)));
+  }
+
+  getStoredBudget() {
+    const budgetFromRegistry = this.registry.get("playerBudget");
+    if (typeof budgetFromRegistry !== "number" || !Number.isFinite(budgetFromRegistry)) {
+      return 0;
+    }
+
+    return Math.max(0, Math.floor(budgetFromRegistry));
   }
 
   getLevelObjectiveText() {
     if (this.isKillObjectiveLevel()) {
       const displayedKills = Math.min(this.killCount, LEVEL_2_KILL_TARGET);
-      return `OBJECTIVE: CHALLENGE 2 - KILL ${LEVEL_2_KILL_TARGET} ENEMIES (${displayedKills}/${LEVEL_2_KILL_TARGET})`;
+      return `OBJECTIVE: KILL ${LEVEL_2_KILL_TARGET} ENEMIES (${displayedKills}/${LEVEL_2_KILL_TARGET})`;
     }
 
-    const secondsToSurvive = Math.floor(this.getLevelDurationMs() / 1000);
-    const challengeNumber = Math.max(1, this.levelId);
-    return `OBJECTIVE: CHALLENGE ${challengeNumber} - SURVIVE FOR ${secondsToSurvive} SECONDS`;
+    const fallbackSeconds = Math.floor(this.getLevelDurationMs() / 1000);
+    const secondsToSurvive = this.levelEndsAt > 0
+      ? Math.max(0, Math.ceil((this.levelEndsAt - this.time.now) / 1000))
+      : fallbackSeconds;
+    return `OBJECTIVE: SURVIVE FOR ${secondsToSurvive} SECONDS`;
   }
 
   isKillObjectiveLevel() {
@@ -1083,14 +1203,19 @@ export class GameScene extends Phaser.Scene {
 
   createObjectiveBanner() {
     const panelY = UI_LAYOUT.objectiveTopY;
-    const panelWidth = Math.min(this.playWidth - UI_LAYOUT.objectiveHorizontalInset, UI_LAYOUT.objectiveMaxWidth);
+    const abortLaneWidth = 220;
+    const panelLeftMargin = 10;
+    const panelRightLimit = this.playWidth - abortLaneWidth;
+    const availableWidth = Math.max(320, panelRightLimit - panelLeftMargin);
+    const panelWidth = Math.min(availableWidth, UI_LAYOUT.objectiveMaxWidth);
     const panelHeight = UI_LAYOUT.objectivePanelHeight;
-    const panelLeft = (this.playWidth - panelWidth) * 0.5;
+    const panelLeft = panelLeftMargin;
     const panelRight = panelLeft + panelWidth;
-    this.createUiBlurBackdrop(this.playWidth * 0.5, panelY + panelHeight * 0.5, panelWidth, panelHeight, 93, 16);
+    const panelCenterX = panelLeft + panelWidth * 0.5;
+    this.createUiBlurBackdrop(panelCenterX, panelY + panelHeight * 0.5, panelWidth, panelHeight, 93, 16);
 
     this.objectivePanel = this.add
-      .image(this.playWidth * 0.5, panelY, "hud-objective-panel")
+      .image(panelCenterX, panelY, "hud-objective-panel")
       .setOrigin(0.5, 0)
       .setDisplaySize(panelWidth, panelHeight)
       .setDepth(94)
@@ -1108,7 +1233,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(96)
       .setBlendMode(Phaser.BlendModes.ADD);
 
-    this.objectiveText = this.add.text(this.playWidth / 2, panelY + UI_LAYOUT.objectiveTextTopInset, this.getLevelObjectiveText(), {
+    this.objectiveText = this.add.text(panelCenterX, panelY + UI_LAYOUT.objectiveTextTopInset, this.getLevelObjectiveText(), {
       fontFamily: UI_DISPLAY_FONT,
       fontSize: "30px",
       color: "#dffcff",
@@ -1203,7 +1328,7 @@ export class GameScene extends Phaser.Scene {
       this.weaponShadow?.setVisible(!isActive);
       if (!isActive && !this.weaponSprite.anims.isPlaying) {
         this.resetWeaponPosition();
-        this.weaponSprite.play("weapon-m203-idle");
+        this.weaponSprite.play(this.weaponIdleAnimKey);
       }
     }
 
@@ -1212,7 +1337,9 @@ export class GameScene extends Phaser.Scene {
         this.magTimerText.setVisible(false);
         this.emitHudUpdate();
       }
-      this.stopMagFireSound();
+      if (!this.isOwnedMagWeaponViewActive) {
+        this.stopMagFireSound();
+      }
       return;
     }
 
@@ -1228,6 +1355,32 @@ export class GameScene extends Phaser.Scene {
 
   isMagModeActive() {
     return this.time.now < this.magModeEndsAt;
+  }
+
+  isMagFiringMechanicActive() {
+    return this.isMagModeActive() || this.isOwnedMagWeaponViewActive;
+  }
+
+  isTavorMechanicActive() {
+    return this.isTavorWeaponViewActive && !this.isMagModeActive();
+  }
+
+  canUseGrenades() {
+    return !this.isMagFiringMechanicActive() && !this.isTavorMechanicActive();
+  }
+
+  getAmmoCostPerShot() {
+    return this.isTavorMechanicActive() ? 3 : 1;
+  }
+
+  getAimAssistRadius() {
+    if (this.isMagFiringMechanicActive()) {
+      return MAG_AIM_ASSIST_RADIUS;
+    }
+    if (this.isTavorMechanicActive()) {
+      return TAVOR_AIM_ASSIST_RADIUS;
+    }
+    return 0;
   }
 
   emitHudUpdate() {
@@ -1251,6 +1404,7 @@ export class GameScene extends Phaser.Scene {
     this.updateLifeBar(health / this.state.maxHp);
     this.updateDangerStateEffects(ammo, health);
     this.updateReloadWarning(ammo);
+    this.updateGrenadeHudVisibility();
   }
 
   createDamageOverlay() {
@@ -1271,6 +1425,18 @@ export class GameScene extends Phaser.Scene {
       .setDepth(260)
       .setOrigin(0.5)
       .setAlpha(0.92);
+    const healthSweep = this.add
+      .rectangle(panelX - 86, y, 72, panelHeight - 12, 0x86f8ff, 0.07)
+      .setDepth(261)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: healthSweep,
+      x: panelX + 86,
+      duration: UI_MOTION.counterSweepSlowMs,
+      yoyo: true,
+      repeat: -1,
+      ease: UI_MOTION.easePulse
+    });
 
     this.add.image(panelX - 108, y, "hud-icon-health").setDisplaySize(42, 42).setDepth(263);
 
@@ -1293,7 +1459,7 @@ export class GameScene extends Phaser.Scene {
       this.hudIntroNodes.push(base, glow);
       this.lifeBarSegments.push({ base, glow });
     }
-    this.hudIntroNodes.push(this.healthPanel);
+    this.hudIntroNodes.push(this.healthPanel, healthSweep);
     this.updateLifeBar(1);
   }
 
@@ -1375,18 +1541,18 @@ export class GameScene extends Phaser.Scene {
     const grenadeX = PLAY_WIDTH - 110;
     const grenadePanelWidth = 196;
     const grenadePanelHeight = UI_LAYOUT.counterPanelHeight;
-    this.createUiBlurBackdrop(grenadeX, y, grenadePanelWidth, grenadePanelHeight, 259);
+    this.grenadeHudBackdropNodes = this.createUiBlurBackdrop(grenadeX, y, grenadePanelWidth, grenadePanelHeight, 259);
     this.grenadePanel = this.add
       .image(grenadeX, y, "hud-counter-grenade-panel")
       .setDisplaySize(grenadePanelWidth, grenadePanelHeight)
       .setDepth(260)
       .setOrigin(0.5);
-    const grenadeSweep = this.add
+    this.grenadeSweep = this.add
       .rectangle(grenadeX - 56, y, 66, grenadePanelHeight - 12, 0x86f8ff, 0.065)
       .setDepth(262)
       .setBlendMode(Phaser.BlendModes.ADD);
     this.tweens.add({
-      targets: grenadeSweep,
+      targets: this.grenadeSweep,
       x: grenadeX + 56,
       duration: UI_MOTION.counterSweepSlowMs,
       yoyo: true,
@@ -1395,7 +1561,10 @@ export class GameScene extends Phaser.Scene {
     });
 
     const grenadeIconX = grenadeX - grenadePanelWidth * 0.5 + iconInsetFromPanelLeft;
-    this.add.image(grenadeIconX, y, "hud-icon-grenade").setDisplaySize(resourceIconSize, resourceIconSize).setDepth(263);
+    this.grenadeHudIcon = this.add
+      .image(grenadeIconX, y, "hud-icon-grenade")
+      .setDisplaySize(resourceIconSize, resourceIconSize)
+      .setDepth(263);
     const grenadeValueX = grenadeX + grenadePanelWidth * 0.5 - 18;
     const grenadeValueY = y;
     this.grenadeText = this.add
@@ -1416,8 +1585,30 @@ export class GameScene extends Phaser.Scene {
       this.ammoText,
       this.grenadeText,
       ammoSweep,
-      grenadeSweep
+      this.grenadeSweep
     );
+  }
+
+  updateGrenadeHudVisibility() {
+    const shouldShowGrenadeHud = this.canUseGrenades();
+    const setVisible = (node, visible) => {
+      if (node?.active) {
+        node.setVisible(visible);
+      }
+    };
+
+    this.grenadeHudBackdropNodes.forEach((node) => setVisible(node, shouldShowGrenadeHud));
+    setVisible(this.grenadePanel, shouldShowGrenadeHud);
+    setVisible(this.grenadeSweep, shouldShowGrenadeHud);
+    setVisible(this.grenadeHudIcon, shouldShowGrenadeHud);
+    setVisible(this.grenadeText, shouldShowGrenadeHud);
+    this.grenadeIcons.forEach((icon) => setVisible(icon, shouldShowGrenadeHud));
+    if (this.grenadeOverflowText?.active) {
+      this.grenadeOverflowText.setVisible(
+        shouldShowGrenadeHud &&
+        (this.grenadeOverflowText.text?.length ?? 0) > 0
+      );
+    }
   }
 
   createAmmoSegments(panelX, panelWidth, y) {
@@ -1529,6 +1720,7 @@ export class GameScene extends Phaser.Scene {
       if (overflow > 0) {
         this.grenadeOverflowText.setText(`+${overflow}`).setVisible(true);
       } else {
+        this.grenadeOverflowText.setText("");
         this.grenadeOverflowText.setVisible(false);
       }
     }
@@ -1914,9 +2106,9 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.stopRetryButtonPulse();
-    this.retryButton?.setVisible(false).setScale(0.96).setAlpha(0);
+    this.retryButton?.setVisible(false).setScale(0.96).setAlpha(0).setTint(RETRY_BUTTON_BASE_TINT);
     this.retryButtonLabel?.setVisible(false).setAlpha(0);
-    this.retryButtonGlow?.setVisible(false).setAlpha(0);
+    this.retryButtonGlow?.setVisible(false).setAlpha(0).setTint(RETRY_BUTTON_GLOW_TINT);
     if (this.gameStatusText?.active) {
       this.gameStatusText
         .setText("MISSION FAILED")
@@ -2033,6 +2225,304 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setZoom(1);
   }
 
+  createAbortButton() {
+    const abortWidth = 170;
+    const x = this.playWidth - abortWidth * 0.5 - 12;
+    const y = UI_LAYOUT.objectiveTopY + UI_LAYOUT.objectivePanelHeight * 0.5;
+    this.abortButton = this.add
+      .image(x, y, "hud-objective-panel")
+      .setDisplaySize(abortWidth, UI_LAYOUT.objectivePanelHeight)
+      .setDepth(306)
+      .setAlpha(0.95)
+      .setInteractive({ useHandCursor: true });
+    this.abortButtonLabel = this.add
+      .text(x, y, "ABORT", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "26px",
+        color: "#dffcff",
+        stroke: "#07161a",
+        strokeThickness: 4,
+        letterSpacing: 2
+      })
+      .setOrigin(0.5)
+      .setDepth(307);
+
+    this.abortButton.on("pointerover", () => {
+      this.abortButton?.setTint(0xd7fbff).setAlpha(1);
+    });
+
+    this.abortButton.on("pointerout", () => {
+      this.abortButton?.clearTint().setAlpha(0.95);
+    });
+
+    this.abortButton.on("pointerup", () => this.abortMission());
+  }
+
+  createAbortConfirmScreen() {
+    const centerX = this.playWidth / 2;
+    const centerY = this.scale.height / 2;
+    const panelWidth = 640;
+    const panelHeight = 328;
+    const buttonY = centerY + 102;
+    const buttonOffsetX = 162;
+    const baseButtonWidth = 238;
+    const baseButtonHeight = 62;
+
+    this.abortConfirmOverlay = this.add
+      .rectangle(centerX, centerY, this.playWidth + 40, this.scale.height + 40, 0x04080e, 0.78)
+      .setDepth(1600)
+      .setVisible(false)
+      .setInteractive({ useHandCursor: false });
+    this.abortConfirmFrame = this.add
+      .rectangle(centerX, centerY, panelWidth + 20, panelHeight + 20, 0x05111a, 0.9)
+      .setStrokeStyle(3, 0x66d8ff, 0.72)
+      .setDepth(1601)
+      .setVisible(false);
+    this.abortConfirmPanel = this.add
+      .rectangle(centerX, centerY, panelWidth, panelHeight, 0x081924, 0.97)
+      .setStrokeStyle(2, 0x2f92b8, 0.85)
+      .setDepth(1602)
+      .setVisible(false);
+    this.abortConfirmTitle = this.add
+      .text(centerX, centerY - 114, "ABORT MISSION?", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "50px",
+        color: "#f2fdff",
+        stroke: "#061116",
+        strokeThickness: 8,
+        letterSpacing: 4
+      })
+      .setOrigin(0.5)
+      .setDepth(1603)
+      .setVisible(false);
+    this.abortConfirmSubtitle = this.add
+      .text(centerX, centerY - 60, "Return to Operation Center?", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "34px",
+        color: "#b8efff",
+        stroke: "#061116",
+        strokeThickness: 5,
+        letterSpacing: 1
+      })
+      .setOrigin(0.5)
+      .setDepth(1603)
+      .setVisible(false);
+    this.abortConfirmDivider = this.add
+      .rectangle(centerX, centerY - 20, panelWidth - 104, 2, 0x59d4f4, 0.45)
+      .setDepth(1603)
+      .setVisible(false);
+    this.abortConfirmBody = this.add
+      .text(centerX, centerY + 24, "Current mission progress will be lost.", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "26px",
+        align: "center",
+        color: "#d1e2e8",
+        stroke: "#061116",
+        strokeThickness: 4,
+        letterSpacing: 1
+      })
+      .setOrigin(0.5)
+      .setDepth(1603)
+      .setVisible(false);
+
+    this.abortConfirmStayGlow = this.add
+      .image(centerX - buttonOffsetX, buttonY, "hud-counter-grenade-panel")
+      .setDisplaySize(baseButtonWidth + 24, baseButtonHeight + 16)
+      .setTint(0x45cfff)
+      .setAlpha(0)
+      .setDepth(1603)
+      .setVisible(false)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.abortConfirmStayButton = this.add
+      .image(centerX - buttonOffsetX, buttonY, "hud-counter-grenade-panel")
+      .setDisplaySize(baseButtonWidth, baseButtonHeight)
+      .setTint(0x1f8ba8)
+      .setDepth(1604)
+      .setVisible(false)
+      .setInteractive({ useHandCursor: true });
+    this.abortConfirmStayLabel = this.add
+      .text(centerX - buttonOffsetX, buttonY, "STAY", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "38px",
+        color: "#f2fdff",
+        stroke: "#06202a",
+        strokeThickness: 5,
+        letterSpacing: 4
+      })
+      .setOrigin(0.5)
+      .setDepth(1605)
+      .setVisible(false);
+    this.abortConfirmLeaveGlow = this.add
+      .image(centerX + buttonOffsetX, buttonY, "hud-counter-grenade-panel")
+      .setDisplaySize(baseButtonWidth + 24, baseButtonHeight + 16)
+      .setTint(0xff6c7b)
+      .setAlpha(0)
+      .setDepth(1603)
+      .setVisible(false)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.abortConfirmLeaveButton = this.add
+      .image(centerX + buttonOffsetX, buttonY, "hud-counter-grenade-panel")
+      .setDisplaySize(baseButtonWidth, baseButtonHeight)
+      .setTint(0x963948)
+      .setDepth(1604)
+      .setVisible(false)
+      .setInteractive({ useHandCursor: true });
+    this.abortConfirmLeaveLabel = this.add
+      .text(centerX + buttonOffsetX, buttonY, "LEAVE", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "38px",
+        color: "#fff4f4",
+        stroke: "#2a0b10",
+        strokeThickness: 5,
+        letterSpacing: 4
+      })
+      .setOrigin(0.5)
+      .setDepth(1605)
+      .setVisible(false);
+
+    this.abortConfirmStayButton.on("pointerover", () => {
+      if (!this.isAbortConfirmVisible()) {
+        return;
+      }
+      this.abortConfirmStayButton?.setTint(0x35b6da);
+      this.abortConfirmStayGlow?.setAlpha(0.48);
+      this.abortConfirmStayLabel?.setScale(1.04);
+    });
+    this.abortConfirmStayButton.on("pointerout", () => {
+      this.abortConfirmStayButton?.setTint(0x1f8ba8);
+      this.abortConfirmStayGlow?.setAlpha(0.22);
+      this.abortConfirmStayLabel?.setScale(1);
+    });
+    this.abortConfirmStayButton.on("pointerdown", () => {
+      if (!this.isAbortConfirmVisible()) {
+        return;
+      }
+      this.abortConfirmStayButton?.setScale(0.97);
+      this.abortConfirmStayLabel?.setScale(0.99);
+    });
+    this.abortConfirmStayButton.on("pointerup", () => {
+      this.abortConfirmStayButton?.setScale(1);
+      this.abortConfirmStayLabel?.setScale(1);
+      this.hideAbortConfirmScreen();
+    });
+
+    this.abortConfirmLeaveButton.on("pointerover", () => {
+      if (!this.isAbortConfirmVisible()) {
+        return;
+      }
+      this.abortConfirmLeaveButton?.setTint(0xb74b5b);
+      this.abortConfirmLeaveGlow?.setAlpha(0.46);
+      this.abortConfirmLeaveLabel?.setScale(1.04);
+    });
+    this.abortConfirmLeaveButton.on("pointerout", () => {
+      this.abortConfirmLeaveButton?.setTint(0x963948);
+      this.abortConfirmLeaveGlow?.setAlpha(0.2);
+      this.abortConfirmLeaveLabel?.setScale(1);
+    });
+    this.abortConfirmLeaveButton.on("pointerdown", () => {
+      if (!this.isAbortConfirmVisible()) {
+        return;
+      }
+      this.abortConfirmLeaveButton?.setScale(0.97);
+      this.abortConfirmLeaveLabel?.setScale(0.99);
+    });
+    this.abortConfirmLeaveButton.on("pointerup", () => {
+      this.abortConfirmLeaveButton?.setScale(1);
+      this.abortConfirmLeaveLabel?.setScale(1);
+      this.confirmAbortMission();
+    });
+  }
+
+  isAbortConfirmVisible() {
+    return Boolean(this.abortConfirmOverlay?.visible);
+  }
+
+  showAbortConfirmScreen() {
+    if (this.isAbortConfirmVisible()) {
+      return;
+    }
+
+    this.stopMagFireSound();
+    this.abortConfirmOverlay?.setVisible(true).setAlpha(0);
+    this.abortConfirmFrame?.setVisible(true).setScale(0.98).setAlpha(0);
+    this.abortConfirmPanel?.setVisible(true).setScale(0.96).setAlpha(0);
+    this.abortConfirmTitle?.setVisible(true).setAlpha(0);
+    this.abortConfirmSubtitle?.setVisible(true).setAlpha(0);
+    this.abortConfirmBody?.setVisible(true).setAlpha(0);
+    this.abortConfirmDivider?.setVisible(true).setAlpha(0);
+    this.abortConfirmStayGlow?.setVisible(true).setScale(0.98).setAlpha(0.16).setTint(0x45cfff);
+    this.abortConfirmStayButton?.setVisible(true).setScale(0.96).setAlpha(0).setTint(0x1f8ba8);
+    this.abortConfirmStayLabel?.setVisible(true).setAlpha(0);
+    this.abortConfirmLeaveGlow?.setVisible(true).setScale(0.98).setAlpha(0.14).setTint(0xff6c7b);
+    this.abortConfirmLeaveButton?.setVisible(true).setScale(0.96).setAlpha(0).setTint(0x963948);
+    this.abortConfirmLeaveLabel?.setVisible(true).setAlpha(0);
+
+    this.tweens.add({
+      targets: this.abortConfirmOverlay,
+      alpha: 0.78,
+      duration: UI_MOTION.cinematicOverlayInMs,
+      ease: UI_MOTION.easeTap
+    });
+    this.tweens.add({
+      targets: [
+        this.abortConfirmFrame,
+        this.abortConfirmPanel,
+        this.abortConfirmTitle,
+        this.abortConfirmSubtitle,
+        this.abortConfirmBody,
+        this.abortConfirmDivider,
+        this.abortConfirmStayButton,
+        this.abortConfirmStayLabel,
+        this.abortConfirmLeaveButton,
+        this.abortConfirmLeaveLabel
+      ].filter(Boolean),
+      alpha: 1,
+      scaleX: 1,
+      scaleY: 1,
+      duration: UI_MOTION.buttonRevealMs + 70,
+      ease: UI_MOTION.easeCinematicPop
+    });
+    this.tweens.add({
+      targets: [this.abortConfirmStayGlow, this.abortConfirmLeaveGlow].filter(Boolean),
+      alpha: { from: 0, to: 0.2 },
+      scaleX: 1,
+      scaleY: 1,
+      duration: UI_MOTION.buttonRevealMs + 90,
+      ease: UI_MOTION.easeHover
+    });
+  }
+
+  hideAbortConfirmScreen() {
+    this.abortConfirmOverlay?.setVisible(false).setAlpha(0);
+    this.abortConfirmFrame?.setVisible(false).setAlpha(0).setScale(1);
+    this.abortConfirmPanel?.setVisible(false).setAlpha(0);
+    this.abortConfirmTitle?.setVisible(false).setAlpha(0);
+    this.abortConfirmSubtitle?.setVisible(false).setAlpha(0);
+    this.abortConfirmBody?.setVisible(false).setAlpha(0);
+    this.abortConfirmDivider?.setVisible(false).setAlpha(0);
+    this.abortConfirmStayGlow?.setVisible(false).setAlpha(0).setScale(1);
+    this.abortConfirmStayButton?.setVisible(false).setAlpha(0).setScale(1).setTint(0x1f8ba8);
+    this.abortConfirmStayLabel?.setVisible(false).setAlpha(0).setScale(1);
+    this.abortConfirmLeaveGlow?.setVisible(false).setAlpha(0).setScale(1);
+    this.abortConfirmLeaveButton?.setVisible(false).setAlpha(0).setScale(1).setTint(0x963948);
+    this.abortConfirmLeaveLabel?.setVisible(false).setAlpha(0).setScale(1);
+  }
+
+  confirmAbortMission() {
+    this.hideAbortConfirmScreen();
+    this.stopMagFireSound();
+    this.hideMissionFailScreen?.();
+    this.input.setDefaultCursor("auto");
+    this.scene.start("operation-center");
+  }
+
+  abortMission() {
+    if (this.gameOver || this.levelComplete) {
+      return;
+    }
+    this.showAbortConfirmScreen();
+  }
+
   createCrosshair() {
     this.crosshairContainer = this.add.container(PLAY_WIDTH * 0.5, this.scale.height * 0.5).setDepth(1000);
     this.crosshair = this.add.image(0, 0, "scope");
@@ -2108,48 +2598,278 @@ export class GameScene extends Phaser.Scene {
   }
 
   createWeaponView() {
-    this.weaponSpriteSheetKey = this.textures.exists("weapon-m203-sheet")
-      ? "weapon-m203-sheet"
-      : this.textures.exists("weapon-m203-sheet-new")
-        ? "weapon-m203-sheet-new"
-        : "weapon-m204-sheet";
+    this.refreshOwnedWeaponIds();
+    const desiredWeaponId = this.getValidSelectedWeaponId();
+    this.selectedWeaponId = desiredWeaponId;
+    const hasOwnedMagWeapon = desiredWeaponId === "mag";
+    const hasOwnedTavorWeapon = desiredWeaponId === "tavor";
+    const canUseOwnedMagView =
+      hasOwnedMagWeapon &&
+      this.textures.exists("weapon-mag-idle") &&
+      this.textures.exists("weapon-mag-firing");
+    const canUseOwnedTavorView =
+      !canUseOwnedMagView &&
+      hasOwnedTavorWeapon &&
+      this.textures.exists("weapon-tavor-idle") &&
+      this.textures.exists("weapon-tavor-firing");
+    const canUseCustomM203View =
+      this.textures.exists("weapon-m203-idle-custom") &&
+      this.textures.exists("weapon-m203-firing-custom");
+    this.isOwnedMagWeaponViewActive = canUseOwnedMagView;
+    this.isTavorWeaponViewActive = canUseOwnedTavorView;
+    this.isCustomM203WeaponViewActive = !canUseOwnedMagView && !canUseOwnedTavorView && canUseCustomM203View;
+    const isCenteredWeaponView =
+      this.isOwnedMagWeaponViewActive || this.isTavorWeaponViewActive || this.isCustomM203WeaponViewActive;
+    this.weaponSpriteSheetKey = canUseOwnedMagView
+      ? "weapon-mag-idle"
+      : canUseOwnedTavorView
+        ? "weapon-tavor-idle"
+      : this.isCustomM203WeaponViewActive
+        ? "weapon-m203-idle-custom"
+        : this.textures.exists("weapon-m203-sheet")
+          ? "weapon-m203-sheet"
+          : this.textures.exists("weapon-m203-sheet-new")
+            ? "weapon-m203-sheet-new"
+            : "weapon-m204-sheet";
     if (!this.textures.exists(this.weaponSpriteSheetKey)) {
       return;
     }
 
     this.ensureWeaponAnimations();
-    this.weaponBaseX = this.playWidth - 6;
-    this.weaponBaseY = this.scale.height - 2;
+    this.weaponBaseX = isCenteredWeaponView ? this.playWidth * 0.5 : this.playWidth - 6;
+    this.weaponBaseY = isCenteredWeaponView
+      ? this.scale.height - UI_LAYOUT.bottomHudYInset - (this.isCustomM203WeaponViewActive ? 140 : 170)
+      : this.scale.height - 2;
     this.weaponShadow = this.add
       .ellipse(this.weaponBaseX + WEAPON_SHADOW_OFFSET_X, this.weaponBaseY + WEAPON_SHADOW_OFFSET_Y, 276, 110, 0x000000, 0.17)
       .setAngle(-8)
       .setDepth(90);
+    if (isCenteredWeaponView) {
+      this.weaponShadow.setVisible(false);
+    }
     this.weaponSprite = this.add
       .sprite(this.weaponBaseX, this.weaponBaseY, this.weaponSpriteSheetKey, 0)
-      .setDisplaySize(320, 252)
-      .setOrigin(1, 1)
+      .setDisplaySize(
+        this.isOwnedMagWeaponViewActive
+          ? 300
+          : this.isTavorWeaponViewActive
+            ? 330
+            : this.isCustomM203WeaponViewActive
+              ? 360
+              : 320,
+        this.isOwnedMagWeaponViewActive
+          ? 300
+          : this.isTavorWeaponViewActive
+            ? 300
+            : this.isCustomM203WeaponViewActive
+              ? 240
+              : 252
+      )
+      .setOrigin(isCenteredWeaponView ? 0.5 : 1, isCenteredWeaponView ? 0.5 : 1)
       .setDepth(91);
     this.weaponSprite.on(Phaser.Animations.Events.ANIMATION_UPDATE, (_animation, frame) => {
       this.applyWeaponCrop(frame);
     });
-    this.weaponSprite.on(`${Phaser.Animations.Events.ANIMATION_COMPLETE_KEY}weapon-m203-fire`, () => {
+    this.weaponSprite.on(`${Phaser.Animations.Events.ANIMATION_COMPLETE_KEY}${this.weaponFireAnimKey}`, () => {
       if (!this.isMagModeActive() && this.weaponSprite?.active) {
-        this.weaponSprite.play("weapon-m203-idle");
+        this.weaponSprite.play(this.weaponIdleAnimKey);
       }
     });
-    this.weaponSprite.on(`${Phaser.Animations.Events.ANIMATION_COMPLETE_KEY}weapon-m203-grenade`, () => {
+    this.weaponSprite.on(`${Phaser.Animations.Events.ANIMATION_COMPLETE_KEY}${this.weaponGrenadeAnimKey}`, () => {
       if (!this.isMagModeActive() && this.weaponSprite?.active) {
-        this.weaponSprite.play("weapon-m203-idle");
+        this.weaponSprite.play(this.weaponIdleAnimKey);
       }
     });
     this.applyWeaponCrop(this.weaponSprite.frame);
-    this.weaponSprite.play("weapon-m203-idle");
+    this.weaponSprite.play(this.weaponIdleAnimKey);
     if (typeof this.syncWeaponShadow === "function") {
       this.syncWeaponShadow();
     }
   }
 
+  refreshOwnedWeaponIds() {
+    const owned = [];
+    if (this.registry.get("hasM203")) {
+      owned.push("m203");
+    }
+    if (this.registry.get("hasTar21")) {
+      owned.push("tavor");
+    }
+    if (this.registry.get("hasMag58")) {
+      owned.push("mag");
+    }
+    if (!owned.length) {
+      owned.push("m203");
+    }
+    this.ownedWeaponIds = owned;
+  }
+
+  getValidSelectedWeaponId() {
+    if (this.ownedWeaponIds.includes(this.selectedWeaponId)) {
+      return this.selectedWeaponId;
+    }
+    return this.ownedWeaponIds[0] ?? "m203";
+  }
+
+  switchWeaponByWheel(deltaY) {
+    this.refreshOwnedWeaponIds();
+    if (this.ownedWeaponIds.length <= 1 || !deltaY) {
+      return;
+    }
+
+    const current = this.getValidSelectedWeaponId();
+    const currentIndex = this.ownedWeaponIds.indexOf(current);
+    const direction = deltaY > 0 ? 1 : -1;
+    const nextIndex = (currentIndex + direction + this.ownedWeaponIds.length) % this.ownedWeaponIds.length;
+    const nextWeaponId = this.ownedWeaponIds[nextIndex];
+    if (!nextWeaponId || nextWeaponId === current) {
+      return;
+    }
+
+    this.selectedWeaponId = nextWeaponId;
+    this.rebuildWeaponView();
+    this.lastShotAtMs = this.time.now;
+    this.emitHudUpdate();
+  }
+
+  rebuildWeaponView() {
+    this.stopMagFireSound();
+    if (this.weaponSprite?.active) {
+      this.weaponSprite.destroy();
+    }
+    if (this.weaponShadow?.active) {
+      this.weaponShadow.destroy();
+    }
+    this.weaponSprite = null;
+    this.weaponShadow = null;
+    this.createWeaponView();
+  }
+
   ensureWeaponAnimations() {
+    if (this.weaponSpriteSheetKey === "weapon-mag-idle") {
+      this.weaponIdleAnimKey = "weapon-mag-idle-view";
+      this.weaponFireAnimKey = "weapon-mag-fire-view";
+      this.weaponGrenadeAnimKey = "weapon-mag-grenade-view";
+
+      if (!this.anims.exists(this.weaponIdleAnimKey)) {
+        this.anims.create({
+          key: this.weaponIdleAnimKey,
+          frames: [{ key: "weapon-mag-idle" }],
+          frameRate: 4,
+          repeat: -1
+        });
+      }
+      if (!this.anims.exists(this.weaponFireAnimKey)) {
+        this.anims.create({
+          key: this.weaponFireAnimKey,
+          frames: [
+            { key: "weapon-mag-firing", frame: 0 },
+            { key: "weapon-mag-firing", frame: 1 },
+            { key: "weapon-mag-firing", frame: 0 }
+          ],
+          frameRate: 16,
+          repeat: 0
+        });
+      }
+      if (!this.anims.exists(this.weaponGrenadeAnimKey)) {
+        this.anims.create({
+          key: this.weaponGrenadeAnimKey,
+          frames: [{ key: "weapon-mag-idle" }],
+          frameRate: 8,
+          repeat: 0
+        });
+      }
+      return;
+    }
+
+    if (this.weaponSpriteSheetKey === "weapon-tavor-idle") {
+      this.weaponIdleAnimKey = "weapon-tavor-idle-view";
+      this.weaponFireAnimKey = "weapon-tavor-fire-view";
+      this.weaponGrenadeAnimKey = "weapon-tavor-grenade-view";
+      this.anims.remove(this.weaponIdleAnimKey);
+      this.anims.remove(this.weaponFireAnimKey);
+      this.anims.remove(this.weaponGrenadeAnimKey);
+
+      this.anims.create({
+        key: this.weaponIdleAnimKey,
+        frames: [{ key: "weapon-tavor-idle" }],
+        frameRate: 4,
+        repeat: -1
+      });
+      this.anims.create({
+        key: this.weaponFireAnimKey,
+        frames: [
+          { key: "weapon-tavor-firing", frame: 0 },
+          { key: "weapon-tavor-firing", frame: 1 },
+          { key: "weapon-tavor-firing", frame: 0 }
+        ],
+        frameRate: 16,
+        repeat: 0
+      });
+      this.anims.create({
+        key: this.weaponGrenadeAnimKey,
+        frames: [{ key: "weapon-tavor-idle" }],
+        frameRate: 8,
+        repeat: 0
+      });
+      return;
+    }
+
+    if (this.weaponSpriteSheetKey === "weapon-m203-idle-custom") {
+      this.weaponIdleAnimKey = "weapon-m203-idle-custom-view";
+      this.weaponFireAnimKey = "weapon-m203-fire-custom-view";
+      this.weaponGrenadeAnimKey = "weapon-m203-grenade-custom-view";
+      this.anims.remove(this.weaponIdleAnimKey);
+      this.anims.remove(this.weaponFireAnimKey);
+      this.anims.remove(this.weaponGrenadeAnimKey);
+      const idleFrame0 = this.textures.exists("weapon-m203-idle-custom-aligned-0")
+        ? { key: "weapon-m203-idle-custom-aligned-0" }
+        : { key: "weapon-m203-idle-custom", frame: 0 };
+      const idleFrame1 = this.textures.exists("weapon-m203-idle-custom-aligned-1")
+        ? { key: "weapon-m203-idle-custom-aligned-1" }
+        : { key: "weapon-m203-idle-custom", frame: 1 };
+      const fireFrame0 = this.textures.exists("weapon-m203-firing-custom-aligned-0")
+        ? { key: "weapon-m203-firing-custom-aligned-0" }
+        : { key: "weapon-m203-firing-custom", frame: 0 };
+      const fireFrame1 = this.textures.exists("weapon-m203-firing-custom-aligned-1")
+        ? { key: "weapon-m203-firing-custom-aligned-1" }
+        : { key: "weapon-m203-firing-custom", frame: 1 };
+      const grenadeFrame0 = this.textures.exists("weapon-m203-firing-grenade-custom-aligned-0")
+        ? { key: "weapon-m203-firing-grenade-custom-aligned-0" }
+        : { key: "weapon-m203-firing-grenade-custom", frame: 0 };
+      const grenadeFrame1 = this.textures.exists("weapon-m203-firing-grenade-custom-aligned-1")
+        ? { key: "weapon-m203-firing-grenade-custom-aligned-1" }
+        : { key: "weapon-m203-firing-grenade-custom", frame: 1 };
+      const grenadeFrame2 = this.textures.exists("weapon-m203-firing-grenade-custom-aligned-2")
+        ? { key: "weapon-m203-firing-grenade-custom-aligned-2" }
+        : { key: "weapon-m203-firing-grenade-custom", frame: 2 };
+
+      this.anims.create({
+        key: this.weaponIdleAnimKey,
+        frames: [idleFrame0],
+        frameRate: 4,
+        repeat: -1
+      });
+      this.anims.create({
+        key: this.weaponFireAnimKey,
+        frames: [fireFrame0, fireFrame1, fireFrame0],
+        frameRate: 14,
+        repeat: 0
+      });
+      this.anims.create({
+        key: this.weaponGrenadeAnimKey,
+        frames: this.textures.exists("weapon-m203-firing-grenade-custom")
+          ? [grenadeFrame0, grenadeFrame1, grenadeFrame2]
+          : [idleFrame0],
+        frameRate: this.textures.exists("weapon-m203-firing-grenade-custom") ? WEAPON_GRENADE_ANIM_FPS : 8,
+        repeat: 0
+      });
+      return;
+    }
+
+    this.weaponIdleAnimKey = "weapon-m203-idle";
+    this.weaponFireAnimKey = "weapon-m203-fire";
+    this.weaponGrenadeAnimKey = "weapon-m203-grenade";
     const fallbackSpriteSheetKey = this.weaponSpriteSheetKey || "weapon-m203-sheet";
     const sheetTexture = this.textures.get(fallbackSpriteSheetKey);
     const availableFrameCount = Math.max(0, (sheetTexture?.frameTotal ?? 1) - 1);
@@ -2208,7 +2928,7 @@ export class GameScene extends Phaser.Scene {
 
     if (hasWeaponSprite && !isMagMode) {
       this.resetWeaponPosition();
-      this.weaponSprite.play(action === "grenade" ? "weapon-m203-grenade" : "weapon-m203-fire", true);
+      this.weaponSprite.play(action === "grenade" ? this.weaponGrenadeAnimKey : this.weaponFireAnimKey, true);
       this.playWeaponTilt(action);
     } else {
       this.cameras.main.shake(action === "grenade" ? 120 : 70, action === "grenade" ? 0.0035 : 0.0018);
@@ -2217,6 +2937,14 @@ export class GameScene extends Phaser.Scene {
 
   resetWeaponPosition() {
     if (!this.weaponSprite?.active) {
+      return;
+    }
+
+    if (this.isOwnedMagWeaponViewActive) {
+      this.updateWeaponAimTarget();
+      this.weaponSprite.setPosition(this.weaponAimTargetX, this.weaponAimTargetY);
+      this.weaponSprite.setAngle(this.weaponAimTargetAngle * 0.55);
+      this.applyWeaponCrop(this.weaponSprite.frame);
       return;
     }
 
@@ -2231,6 +2959,11 @@ export class GameScene extends Phaser.Scene {
 
   applyWeaponCrop(frame) {
     if (!this.weaponSprite?.active) {
+      return;
+    }
+
+    if (this.isOwnedMagWeaponViewActive || this.isTavorWeaponViewActive || this.isCustomM203WeaponViewActive) {
+      this.weaponSprite.setCrop();
       return;
     }
 
@@ -2306,9 +3039,34 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // Keep weapon movement driven by scope-follow, not recoil tweening.
-    this.tweens.killTweensOf(this.weaponSprite);
-    this.resetWeaponPosition();
+    if (!this.isOwnedMagWeaponViewActive) {
+      // Keep non-MAG weapon movement driven by scope-follow only.
+      this.tweens.killTweensOf(this.weaponSprite);
+      this.resetWeaponPosition();
+      return;
+    }
+
+    this.applyWeaponRecoil(action);
+  }
+
+  applyWeaponRecoil(action) {
+    const isGrenade = action === "grenade";
+    const kickY = isGrenade ? -16 : -9;
+    const kickX = isGrenade ? Phaser.Math.FloatBetween(-2.2, 2.2) : Phaser.Math.FloatBetween(-1.4, 1.4);
+    const kickAngle = isGrenade ? Phaser.Math.FloatBetween(-1.8, 1.8) : Phaser.Math.FloatBetween(-1.2, 1.2);
+
+    this.tweens.killTweensOf(this, ["weaponRecoilX", "weaponRecoilY", "weaponRecoilAngle"]);
+    this.weaponRecoilX = kickX;
+    this.weaponRecoilY = kickY;
+    this.weaponRecoilAngle = kickAngle;
+    this.tweens.add({
+      targets: this,
+      weaponRecoilX: 0,
+      weaponRecoilY: 0,
+      weaponRecoilAngle: 0,
+      duration: isGrenade ? 130 : 95,
+      ease: "Quad.Out"
+    });
   }
 
   updateWeaponAimTarget() {
@@ -2320,9 +3078,9 @@ export class GameScene extends Phaser.Scene {
     );
     const normalizedX = ((aimX / this.playWidth) - 0.5) * 2;
     const normalizedY = ((aimY / this.scale.height) - 0.5) * 2;
-    this.weaponAimTargetX = this.weaponBaseX + normalizedX * WEAPON_AIM_FOLLOW_X_MAX;
-    this.weaponAimTargetY = this.weaponBaseY + normalizedY * WEAPON_AIM_FOLLOW_Y_MAX;
-    this.weaponAimTargetAngle = normalizedX * WEAPON_AIM_FOLLOW_ANGLE_MAX + normalizedY * 1.5;
+    this.weaponAimTargetX = this.weaponBaseX + normalizedX * WEAPON_AIM_FOLLOW_X_MAX + this.weaponRecoilX;
+    this.weaponAimTargetY = this.weaponBaseY + normalizedY * WEAPON_AIM_FOLLOW_Y_MAX + this.weaponRecoilY;
+    this.weaponAimTargetAngle = normalizedX * WEAPON_AIM_FOLLOW_ANGLE_MAX + normalizedY * 1.5 + this.weaponRecoilAngle;
   }
 
   updateWeaponAimFollow() {
@@ -2355,6 +3113,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   createUiBlurBackdrop(centerX, centerY, width, height, depth, cornerRadius = 12) {
+    const nodes = [];
     const layers = [
       { expand: 24, alpha: 0.045 },
       { expand: 14, alpha: 0.06 },
@@ -2362,10 +3121,11 @@ export class GameScene extends Phaser.Scene {
     ];
 
     layers.forEach((layer) => {
-      this.add
+      const node = this.add
         .rectangle(centerX, centerY, width + layer.expand, height + layer.expand, 0x06111a, layer.alpha)
         .setDepth(depth)
         .setOrigin(0.5);
+      nodes.push(node);
     });
 
     const rim = this.add.graphics();
@@ -2378,6 +3138,8 @@ export class GameScene extends Phaser.Scene {
       cornerRadius
     );
     rim.setDepth(depth + 0.1);
+    nodes.push(rim);
+    return nodes;
   }
 
   createForegroundVignette() {
@@ -2463,7 +3225,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   playFireSound() {
-    if (this.isMagModeActive()) {
+    if (this.isMagFiringMechanicActive()) {
       if (!this.magFireSound?.isPlaying) {
         this.magFireSound?.play();
       }
@@ -2471,6 +3233,14 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.stopMagFireSound();
+    if (this.isTavorMechanicActive()) {
+      if (this.tavorFireSound?.isPlaying) {
+        this.tavorFireSound.stop();
+      }
+      this.tavorFireSound?.play();
+      return;
+    }
+
     this.sound.play("m203-fire", {
       volume: 0.42
     });

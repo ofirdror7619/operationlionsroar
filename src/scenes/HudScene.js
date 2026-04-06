@@ -1,30 +1,9 @@
 import Phaser from "phaser";
 import { HUD_PANEL_WIDTH, PLAY_WIDTH } from "../game/config";
-import { UI_LAYOUT, UI_MOTION } from "../game/uiTokens";
+import { UI_COLORS, UI_LAYOUT, UI_MOTION } from "../game/uiTokens";
 
 const UI_DISPLAY_FONT = "'Oxanium', 'Barlow Condensed', sans-serif";
 const UI_BODY_FONT = "'Share Tech Mono', 'Chakra Petch', monospace";
-const UI_COLORS = {
-  panelTopLeft: 0x07141a,
-  panelTopRight: 0x0a201f,
-  panelBottomLeft: 0x050d12,
-  panelBottomRight: 0x0a1918,
-  frameOuter: 0x4bbfbc,
-  frameInner: 0x2a6665,
-  glow: 0x2de5d0,
-  grid: 0x2a8f8c,
-  textMain: "#d8fff9",
-  textStroke: "#031016",
-  label: "#79d6cb",
-  body: "#baf7ec",
-  buttonFill: 0x1d9d8f,
-  buttonHover: 0x28bda9,
-  buttonStroke: 0x8afff2,
-  buttonText: "#041915",
-  boxFill: 0x051015,
-  boxStroke: 0x36b8b2
-};
-
 export class HudScene extends Phaser.Scene {
   constructor() {
     super("hud");

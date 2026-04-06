@@ -1,6 +1,18 @@
 import Phaser from "phaser";
 import operationCenterBackgroundUrl from "../assets/images/operation-center/background.png";
 import storeBackgroundUrl from "../assets/images/store/background.png";
+import storeM203Url from "../assets/images/store/m-203-store.png";
+import storeMagUrl from "../assets/images/store/MAG-store.png";
+import storeGrenadeUrl from "../assets/images/store/grenade-store.png";
+import storeTavorUrl from "../assets/images/store/Tavor-TAR-21-store.png";
+import m203IdleUrl from "../assets/images/game/weapons/m-203/m-203-idle.png";
+import m203FiringUrl from "../assets/images/game/weapons/m-203/m-203-firing.png";
+import m203FiringGrenadeUrl from "../assets/images/game/weapons/m-203/m-203-firing-grenade.png";
+import tavorIdleUrl from "../assets/images/game/weapons/tavor-tar-21/tavor-idle.png";
+import tavorFiringUrl from "../assets/images/game/weapons/tavor-tar-21/tavor-firing.png";
+import tavorFireUrl from "../assets/audio/tavor.mp3";
+import magIdleUrl from "../assets/images/game/weapons/fn-mag-58/mag-idle.png";
+import magFiringUrl from "../assets/images/game/weapons/fn-mag-58/mag-firing.png";
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -10,6 +22,10 @@ export class PreloadScene extends Phaser.Scene {
   preload() {
     this.load.image("operation-center-bg", operationCenterBackgroundUrl);
     this.load.image("store-bg", storeBackgroundUrl);
+    this.load.image("store-item-m203", storeM203Url);
+    this.load.image("store-item-mag", storeMagUrl);
+    this.load.image("store-item-grenade", storeGrenadeUrl);
+    this.load.image("store-item-tavor", storeTavorUrl);
     this.load.image("bg", "assets/images/game/background.png");
     this.load.image("health-bar", "assets/images/hud/health-bar.png");
     this.load.image("weapon-m203", "assets/images/hud/m-203-hud.png");
@@ -29,6 +45,28 @@ export class PreloadScene extends Phaser.Scene {
       frameWidth: 384,
       frameHeight: 256
     });
+    this.load.spritesheet("weapon-m203-idle-custom", m203IdleUrl, {
+      frameWidth: 768,
+      frameHeight: 879
+    });
+    this.load.spritesheet("weapon-m203-firing-custom", m203FiringUrl, {
+      frameWidth: 768,
+      frameHeight: 889
+    });
+    this.load.spritesheet("weapon-m203-firing-grenade-custom", m203FiringGrenadeUrl, {
+      frameWidth: 512,
+      frameHeight: 920
+    });
+    this.load.image("weapon-tavor-idle", tavorIdleUrl);
+    this.load.spritesheet("weapon-tavor-firing", tavorFiringUrl, {
+      frameWidth: 768,
+      frameHeight: 894
+    });
+    this.load.image("weapon-mag-idle", magIdleUrl);
+    this.load.spritesheet("weapon-mag-firing", magFiringUrl, {
+      frameWidth: 768,
+      frameHeight: 1024
+    });
     this.load.image("mag-weapon-pickup", "assets/images/game/MAG-game.png");
     this.load.image("magazine", "assets/images/game/magazine.png");
     this.load.image("medikit", "assets/images/game/medikit.png");
@@ -39,6 +77,7 @@ export class PreloadScene extends Phaser.Scene {
     this.load.audio("m203-empty", "assets/audio/empty-m-203.mp3");
     this.load.audio("m203-fire", "assets/audio/m-203.mp3");
     this.load.audio("m203-grenade", "assets/audio/m-203-grenade.mp3");
+    this.load.audio("tavor-fire", tavorFireUrl);
     this.load.audio("mag-fire", "assets/audio/MAG.mp3");
     this.load.image("enemy", "assets/images/game/enemy-1/enemy-1-sprite-sheet.png");
     this.load.image("enemy-grenade", "assets/images/game/enemy-2/enemy-2-sprite-sheet.png");
@@ -50,7 +89,168 @@ export class PreloadScene extends Phaser.Scene {
     this.createNormalizedEnemyFrameTextures();
     this.createNormalizedWeaponFrameTextures();
     this.createStableWeaponAnimTextures();
+    this.createAlignedCustomM203Textures();
     this.scene.start("menu");
+  }
+
+  createAlignedCustomM203Textures() {
+    this.createOffsetCustomFrames("weapon-m203-idle-custom", [0, 1], "weapon-m203-idle-custom-aligned", {
+      0: { x: 0, y: 0 },
+      1: { x: -2, y: 0 }
+    });
+    this.createOffsetCustomFrames("weapon-m203-firing-custom", [0, 1], "weapon-m203-firing-custom-aligned", {
+      0: { x: 0, y: 0 },
+      1: { x: -3, y: -1 }
+    });
+    this.createOffsetCustomFrames("weapon-m203-firing-grenade-custom", [0, 1, 2], "weapon-m203-firing-grenade-custom-aligned", {
+      0: { x: 0, y: 0 },
+      1: { x: -3, y: -1 },
+      2: { x: -2, y: 0 }
+    });
+  }
+
+  createOffsetCustomFrames(textureKey, frameIndexes, outputPrefix, offsetsByFrame = {}) {
+    if (!this.textures.exists(textureKey)) {
+      return;
+    }
+
+    const texture = this.textures.get(textureKey);
+    const source = texture?.getSourceImage?.();
+    if (!source) {
+      return;
+    }
+
+    frameIndexes.forEach((frameIndex) => {
+      const sourceFrame = texture.get(frameIndex);
+      if (!sourceFrame) {
+        return;
+      }
+
+      const outputKey = `${outputPrefix}-${frameIndex}`;
+      if (this.textures.exists(outputKey)) {
+        this.textures.remove(outputKey);
+      }
+
+      const offset = offsetsByFrame[frameIndex] ?? { x: 0, y: 0 };
+      const canvasTexture = this.textures.createCanvas(outputKey, sourceFrame.width, sourceFrame.height);
+      const ctx = canvasTexture.getContext();
+      ctx.clearRect(0, 0, sourceFrame.width, sourceFrame.height);
+      ctx.drawImage(
+        source,
+        sourceFrame.cutX,
+        sourceFrame.cutY,
+        sourceFrame.width,
+        sourceFrame.height,
+        offset.x,
+        offset.y,
+        sourceFrame.width,
+        sourceFrame.height
+      );
+      canvasTexture.refresh();
+    });
+  }
+
+  createAlignedCustomFrames(textureKey, frameIndexes, outputPrefix, offsetScale = 1) {
+    if (!this.textures.exists(textureKey)) {
+      return;
+    }
+
+    const texture = this.textures.get(textureKey);
+    const source = texture?.getSourceImage?.();
+    if (!source) {
+      return;
+    }
+
+    const readBounds = (frameIndex) => {
+      const frame = texture.get(frameIndex);
+      if (!frame) {
+        return null;
+      }
+
+      const sampleKey = `${outputPrefix}-sample-${frameIndex}`;
+      if (this.textures.exists(sampleKey)) {
+        this.textures.remove(sampleKey);
+      }
+      const sample = this.textures.createCanvas(sampleKey, frame.width, frame.height);
+      const sampleCtx = sample.getContext();
+      sampleCtx.clearRect(0, 0, frame.width, frame.height);
+      sampleCtx.drawImage(
+        source,
+        frame.cutX,
+        frame.cutY,
+        frame.width,
+        frame.height,
+        0,
+        0,
+        frame.width,
+        frame.height
+      );
+      const imageData = sampleCtx.getImageData(0, 0, frame.width, frame.height).data;
+      this.textures.remove(sampleKey);
+
+      let minX = frame.width;
+      let minY = frame.height;
+      let maxX = -1;
+      let maxY = -1;
+
+      for (let y = 0; y < frame.height; y += 1) {
+        for (let x = 0; x < frame.width; x += 1) {
+          const alpha = imageData[(y * frame.width + x) * 4 + 3];
+          if (alpha <= 8) {
+            continue;
+          }
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+
+      if (maxX < 0 || maxY < 0) {
+        return null;
+      }
+
+      return {
+        centerX: (minX + maxX) * 0.5,
+        bottomY: maxY
+      };
+    };
+
+    const anchorFrame = texture.get(frameIndexes[0]);
+    const anchorBounds = readBounds(frameIndexes[0]);
+    if (!anchorFrame || !anchorBounds) {
+      return;
+    }
+
+    frameIndexes.forEach((frameIndex) => {
+      const sourceFrame = texture.get(frameIndex);
+      if (!sourceFrame) {
+        return;
+      }
+      const frameBounds = readBounds(frameIndex);
+      const outputKey = `${outputPrefix}-${frameIndex}`;
+      if (this.textures.exists(outputKey)) {
+        this.textures.remove(outputKey);
+      }
+
+      const offsetX = frameBounds ? Math.round((anchorBounds.centerX - frameBounds.centerX) * offsetScale) : 0;
+      const offsetY = frameBounds ? Math.round((anchorBounds.bottomY - frameBounds.bottomY) * offsetScale) : 0;
+      const aligned = this.textures.createCanvas(outputKey, sourceFrame.width, sourceFrame.height);
+      const ctx = aligned.getContext();
+      ctx.clearRect(0, 0, sourceFrame.width, sourceFrame.height);
+      ctx.drawImage(
+        source,
+        sourceFrame.cutX,
+        sourceFrame.cutY,
+        sourceFrame.width,
+        sourceFrame.height,
+        offsetX,
+        offsetY,
+        sourceFrame.width,
+        sourceFrame.height
+      );
+      aligned.refresh();
+    });
   }
 
   createNormalizedEnemyFrameTextures() {

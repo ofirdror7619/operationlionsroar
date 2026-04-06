@@ -1,28 +1,11 @@
 import Phaser from "phaser";
 import { HUD_PANEL_WIDTH, PLAY_WIDTH } from "../game/config";
+import { UI_COLORS } from "../game/uiTokens";
 
 const MUSIC_LOOP_START_SECONDS = 15;
 const MUSIC_LOOP_MARKER = "main-loop";
 const UI_DISPLAY_FONT = "'Oxanium', 'Barlow Condensed', sans-serif";
 const UI_BODY_FONT = "'Share Tech Mono', 'Chakra Petch', monospace";
-const UI_COLORS = {
-  panelTopLeft: 0x07141a,
-  panelTopRight: 0x0a201f,
-  panelBottomLeft: 0x050d12,
-  panelBottomRight: 0x0a1918,
-  frameOuter: 0x4bbfbc,
-  frameInner: 0x2a6665,
-  glow: 0x2de5d0,
-  grid: 0x2a8f8c,
-  title: "#d8fff9",
-  titleStroke: "#031016",
-  body: "#baf7ec",
-  buttonFill: 0x1d9d8f,
-  buttonHover: 0x28bda9,
-  buttonStroke: 0x8afff2,
-  buttonText: "#041915"
-};
-
 export class MenuScene extends Phaser.Scene {
   constructor() {
     super("menu");
@@ -105,8 +88,8 @@ export class MenuScene extends Phaser.Scene {
       .text(playWidth / 2, 52, "OPERATION LION'S ROAR", {
         fontFamily: UI_DISPLAY_FONT,
         fontSize: "62px",
-        color: UI_COLORS.title,
-        stroke: UI_COLORS.titleStroke,
+        color: UI_COLORS.textMain,
+        stroke: UI_COLORS.textStroke,
         strokeThickness: 5,
         letterSpacing: 3
       })
@@ -248,6 +231,13 @@ export class MenuScene extends Phaser.Scene {
     this.startBlinkTween = null;
     this.typingEvent?.remove(false);
     this.typingEvent = null;
+    this.registry.set("playerBudget", 1300);
+    this.registry.set("playerGrenades", 0);
+    this.registry.set("hasM203", false);
+    this.registry.set("hasMag58", false);
+    this.registry.set("hasTar21", false);
+    this.registry.set("currentMissionId", 1);
+    this.registry.remove("operationCenterNotice");
     this.scene.start("operation-center");
   }
 
