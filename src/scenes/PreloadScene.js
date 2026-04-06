@@ -10,6 +10,9 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image("health-bar", "assets/images/hud/health-bar.png");
     this.load.image("weapon-m203", "assets/images/hud/m-203-hud.png");
     this.load.image("weapon-mag", "assets/images/hud/MAG-hud.png");
+    this.load.image("hud-icon-ammo", "assets/images/hud/icon-ammo-hud.png");
+    this.load.image("hud-icon-health", "assets/images/hud/icon-health-hud.png");
+    this.load.image("hud-icon-grenade", "assets/images/hud/icon-grenade-hud.png");
     this.load.spritesheet("weapon-m203-sheet-new", "assets/images/game/m-203-sprite-sheet-new.png", {
       frameWidth: 384,
       frameHeight: 256
@@ -271,6 +274,9 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   createUiTextures() {
+    this.createObjectivePanelTexture();
+    this.createResourcePanelTextures();
+
     const scope = this.make.graphics({ x: 0, y: 0, add: false });
     const cx = 64;
     const cy = 64;
@@ -392,5 +398,100 @@ export class PreloadScene extends Phaser.Scene {
     grenadeIcon.fillRect(16, 4, 8, 4);
     grenadeIcon.generateTexture("icon-grenade", 40, 40);
     grenadeIcon.destroy();
+  }
+
+  createObjectivePanelTexture() {
+    const width = 900;
+    const height = 64;
+    const bevel = 24;
+    const edgeInset = 8;
+    const g = this.make.graphics({ x: 0, y: 0, add: false });
+
+    const outerPoints = [
+      new Phaser.Geom.Point(bevel, 0),
+      new Phaser.Geom.Point(width - bevel, 0),
+      new Phaser.Geom.Point(width, height * 0.32),
+      new Phaser.Geom.Point(width - edgeInset, height),
+      new Phaser.Geom.Point(edgeInset, height),
+      new Phaser.Geom.Point(0, height * 0.32)
+    ];
+    const innerPoints = outerPoints.map((point) => new Phaser.Geom.Point(
+      Phaser.Math.Clamp(point.x, edgeInset, width - edgeInset),
+      Phaser.Math.Clamp(point.y, edgeInset, height - edgeInset)
+    ));
+
+    g.fillStyle(0x1bf0ff, 0.1);
+    g.fillPoints(outerPoints, true);
+    g.fillStyle(0x050d10, 0.9);
+    g.fillPoints(innerPoints, true);
+
+    g.lineStyle(3, 0x56fbff, 0.34);
+    g.strokePoints(outerPoints, true, true);
+    g.lineStyle(1, 0xa2f8ff, 0.64);
+    g.strokePoints(innerPoints, true, true);
+
+    g.lineStyle(1, 0x63d5de, 0.14);
+    for (let y = 11; y < height - 10; y += 4) {
+      g.lineBetween(bevel + 8, y, width - bevel - 8, y);
+    }
+
+    g.fillStyle(0xf7d36a, 0.18);
+    g.fillCircle(width * 0.12, height * 0.5, 10);
+    g.fillCircle(width * 0.88, height * 0.5, 10);
+
+    g.fillStyle(0x9af6ff, 0.2);
+    g.fillRect(30, 8, width - 60, 4);
+    g.fillStyle(0x39dbe8, 0.12);
+    g.fillRect(26, height - 12, width - 52, 3);
+
+    g.generateTexture("hud-objective-panel", width, height);
+    g.destroy();
+  }
+
+  createResourcePanelTextures() {
+    this.createCounterPanelTexture("hud-counter-ammo-panel", 336, 72);
+    this.createCounterPanelTexture("hud-counter-grenade-panel", 196, 72);
+  }
+
+  createCounterPanelTexture(key, width, height) {
+    const bevel = 20;
+    const edgeInset = 7;
+    const g = this.make.graphics({ x: 0, y: 0, add: false });
+
+    const outerPoints = [
+      new Phaser.Geom.Point(bevel, 0),
+      new Phaser.Geom.Point(width - bevel, 0),
+      new Phaser.Geom.Point(width, height * 0.35),
+      new Phaser.Geom.Point(width - edgeInset, height),
+      new Phaser.Geom.Point(edgeInset, height),
+      new Phaser.Geom.Point(0, height * 0.35)
+    ];
+    const innerPoints = outerPoints.map((point) => new Phaser.Geom.Point(
+      Phaser.Math.Clamp(point.x, edgeInset, width - edgeInset),
+      Phaser.Math.Clamp(point.y, edgeInset, height - edgeInset)
+    ));
+
+    g.fillStyle(0x29f6ff, 0.09);
+    g.fillPoints(outerPoints, true);
+    g.fillStyle(0x050e12, 0.92);
+    g.fillPoints(innerPoints, true);
+
+    g.lineStyle(2, 0x56fbff, 0.42);
+    g.strokePoints(outerPoints, true, true);
+    g.lineStyle(1, 0xbefeff, 0.58);
+    g.strokePoints(innerPoints, true, true);
+
+    g.lineStyle(1, 0x5edeea, 0.12);
+    for (let y = 12; y < height - 10; y += 4) {
+      g.lineBetween(bevel + 6, y, width - bevel - 6, y);
+    }
+
+    g.fillStyle(0x9af6ff, 0.17);
+    g.fillRect(24, 8, width - 48, 3);
+    g.fillStyle(0x35d8e2, 0.11);
+    g.fillRect(22, height - 12, width - 44, 3);
+
+    g.generateTexture(key, width, height);
+    g.destroy();
   }
 }

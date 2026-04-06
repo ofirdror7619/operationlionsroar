@@ -3,8 +3,25 @@ import { HUD_PANEL_WIDTH, PLAY_WIDTH } from "../game/config";
 
 const MUSIC_LOOP_START_SECONDS = 15;
 const MUSIC_LOOP_MARKER = "main-loop";
-const UI_DISPLAY_FONT = "'Barlow Condensed', 'Teko', sans-serif";
-const UI_BODY_FONT = "'Chakra Petch', 'Share Tech Mono', monospace";
+const UI_DISPLAY_FONT = "'Oxanium', 'Barlow Condensed', sans-serif";
+const UI_BODY_FONT = "'Share Tech Mono', 'Chakra Petch', monospace";
+const UI_COLORS = {
+  panelTopLeft: 0x07141a,
+  panelTopRight: 0x0a201f,
+  panelBottomLeft: 0x050d12,
+  panelBottomRight: 0x0a1918,
+  frameOuter: 0x4bbfbc,
+  frameInner: 0x2a6665,
+  glow: 0x2de5d0,
+  grid: 0x2a8f8c,
+  title: "#d8fff9",
+  titleStroke: "#031016",
+  body: "#baf7ec",
+  buttonFill: 0x1d9d8f,
+  buttonHover: 0x28bda9,
+  buttonStroke: 0x8afff2,
+  buttonText: "#041915"
+};
 
 export class MenuScene extends Phaser.Scene {
   constructor() {
@@ -46,26 +63,32 @@ export class MenuScene extends Phaser.Scene {
     this.typewriterCursor = 0;
 
     this.add.image(playWidth / 2, height / 2, "bg").setDisplaySize(playWidth, height);
-    this.add.rectangle(playWidth / 2, height / 2, playWidth, height, 0x080d14, 0.46);
-    this.add.rectangle(playWidth * 0.2, height * 0.28, playWidth * 0.5, height * 0.5, 0x2a5a82, 0.12);
-    this.add.rectangle(playWidth * 0.8, height * 0.8, playWidth * 0.44, height * 0.36, 0xa06824, 0.11);
+    this.add.rectangle(playWidth / 2, height / 2, playWidth, height, 0x040d11, 0.5);
+    this.add.rectangle(playWidth * 0.2, height * 0.28, playWidth * 0.5, height * 0.5, 0x0f504d, 0.12);
+    this.add.rectangle(playWidth * 0.8, height * 0.8, playWidth * 0.44, height * 0.36, 0x0b3a38, 0.1);
     if (HUD_PANEL_WIDTH > 0) {
       const hudBg = this.add.graphics();
-      hudBg.fillGradientStyle(0x0d1828, 0x121f31, 0x0d1523, 0x101a2b, 1);
+      hudBg.fillGradientStyle(
+        UI_COLORS.panelTopLeft,
+        UI_COLORS.panelTopRight,
+        UI_COLORS.panelBottomLeft,
+        UI_COLORS.panelBottomRight,
+        1
+      );
       hudBg.fillRect(panelLeft, 0, HUD_PANEL_WIDTH, height);
 
       const hudFrame = this.add.graphics();
-      hudFrame.lineStyle(2, 0x3a5678, 0.88);
+      hudFrame.lineStyle(1, UI_COLORS.frameOuter, 0.88);
       hudFrame.strokeRect(panelLeft + 2, 2, HUD_PANEL_WIDTH - 4, height - 4);
-      hudFrame.lineStyle(1, 0x223753, 0.8);
+      hudFrame.lineStyle(1, UI_COLORS.frameInner, 0.8);
       hudFrame.strokeRect(panelLeft + 8, 8, HUD_PANEL_WIDTH - 16, height - 16);
 
       const hudGlow = this.add.graphics();
-      hudGlow.fillStyle(0x5b8ccf, 0.16);
+      hudGlow.fillStyle(UI_COLORS.glow, 0.14);
       hudGlow.fillEllipse(contentCenterX, 26, (contentRight - contentLeft) * 1.05, 54);
 
       const hudGrid = this.add.graphics();
-      hudGrid.lineStyle(1, 0x385273, 0.2);
+      hudGrid.lineStyle(1, UI_COLORS.grid, 0.2);
       for (let y = 0; y <= height; y += 26) {
         hudGrid.lineBetween(contentLeft, y, panelRight - 10, y);
       }
@@ -82,9 +105,9 @@ export class MenuScene extends Phaser.Scene {
       .text(playWidth / 2, 52, "OPERATION LION'S ROAR", {
         fontFamily: UI_DISPLAY_FONT,
         fontSize: "62px",
-        color: "#dfedf9",
-        stroke: "#08121d",
-        strokeThickness: 7,
+        color: UI_COLORS.title,
+        stroke: UI_COLORS.titleStroke,
+        strokeThickness: 5,
         letterSpacing: 3
       })
       .setOrigin(0.5);
@@ -93,7 +116,7 @@ export class MenuScene extends Phaser.Scene {
       .text(64, 100, "", {
         fontFamily: UI_BODY_FONT,
         fontSize: "21px",
-        color: "#d4e1ef",
+        color: UI_COLORS.body,
         lineSpacing: 9,
         wordWrap: { width: playWidth - 128 }
       })
@@ -106,7 +129,8 @@ export class MenuScene extends Phaser.Scene {
 
     this.startButton = this.add
       .rectangle(playWidth / 2, height - 120, 226, 52, 0x1f7f77, 0.97)
-      .setStrokeStyle(2, 0x8fe3dd, 0.95)
+      .setFillStyle(UI_COLORS.buttonFill, 0.97)
+      .setStrokeStyle(1, UI_COLORS.buttonStroke, 0.95)
       .setVisible(false)
       .setInteractive({ useHandCursor: true });
 
@@ -114,7 +138,7 @@ export class MenuScene extends Phaser.Scene {
       .text(this.startButton.x, this.startButton.y, "START", {
         fontFamily: UI_DISPLAY_FONT,
         fontSize: "34px",
-        color: "#05181c",
+        color: UI_COLORS.buttonText,
         letterSpacing: 3
       })
       .setOrigin(0.5)
@@ -124,9 +148,9 @@ export class MenuScene extends Phaser.Scene {
       if (!this.canStart) {
         return;
       }
-      this.startButton.setFillStyle(0x2d978d, 1);
+      this.startButton.setFillStyle(UI_COLORS.buttonHover, 1);
     });
-    this.startButton.on("pointerout", () => this.startButton.setFillStyle(0x1f7f77, 0.97));
+    this.startButton.on("pointerout", () => this.startButton.setFillStyle(UI_COLORS.buttonFill, 0.97));
     this.startButton.on("pointerup", () => {
       if (this.canStart) {
         this.startGame();
