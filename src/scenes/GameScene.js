@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { EnemySpawner } from "../systems/EnemySpawner";
 import { GameState } from "../systems/GameState";
 import { PLAY_WIDTH } from "../game/config";
+import { UI_LAYOUT, UI_MOTION } from "../game/uiTokens";
 
 const MUSIC_LOOP_START_SECONDS = 15;
 const MUSIC_LOOP_MARKER = "main-loop";
@@ -110,8 +111,16 @@ export class GameScene extends Phaser.Scene {
     this.retryButton = null;
     this.retryButtonLabel = null;
     this.retryButtonGlow = null;
+    this.retryButtonPulseTween = null;
+    this.retryButtonHoverTween = null;
     this.failOverlay = null;
     this.failBlurLayers = [];
+    this.failZoomTween = null;
+    this.failTextFlickerTween = null;
+    this.failGlitchGhostLeft = null;
+    this.failGlitchGhostRight = null;
+    this.backgroundImage = null;
+    this.failBackgroundBlurFx = null;
     this.isLowHpPulseActive = false;
     this.isLowAmmoBlinkActive = false;
     this.lowHpPulseTween = null;
@@ -156,7 +165,7 @@ export class GameScene extends Phaser.Scene {
     this.heartPickups = this.add.group();
     this.magWeaponPickups = this.add.group();
 
-    this.add
+    this.backgroundImage = this.add
       .image(this.playWidth / 2, this.scale.height / 2, "bg")
       .setDisplaySize(this.playWidth, this.scale.height);
     this.createWeaponView();
@@ -238,17 +247,44 @@ export class GameScene extends Phaser.Scene {
     this.gameStatusText = this.add
       .text(this.playWidth / 2, this.scale.height * 0.45, "", {
         fontFamily: UI_DISPLAY_FONT,
-        fontSize: "86px",
+        fontSize: "82px",
         color: "#f8fbff",
-        stroke: "#3a0000",
+        stroke: "#2a0000",
         strokeThickness: 10,
+        fontStyle: "900",
         align: "center",
-        letterSpacing: 8
+        letterSpacing: 6
       })
       .setDepth(1502)
       .setOrigin(0.5)
       .setVisible(false);
-    this.gameStatusText.setShadow(0, 0, "#ff5050", 20, true, true);
+    this.gameStatusText.setShadow(0, 0, "#ff2b39", 30, true, true);
+    this.failGlitchGhostLeft = this.add
+      .text(this.playWidth / 2, this.scale.height * 0.45, "MISSION FAILED", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "82px",
+        color: "#ff5b67",
+        fontStyle: "900",
+        letterSpacing: 6
+      })
+      .setDepth(1501)
+      .setOrigin(0.5)
+      .setAlpha(0)
+      .setVisible(false)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.failGlitchGhostRight = this.add
+      .text(this.playWidth / 2, this.scale.height * 0.45, "MISSION FAILED", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "82px",
+        color: "#7fdcff",
+        fontStyle: "900",
+        letterSpacing: 6
+      })
+      .setDepth(1501)
+      .setOrigin(0.5)
+      .setAlpha(0)
+      .setVisible(false)
+      .setBlendMode(Phaser.BlendModes.ADD);
 
     this.retryButton = this.add
       .rectangle(this.playWidth / 2, this.scale.height / 2 + 88, 248, 60, 0xba1f2f, 0.98)
@@ -273,21 +309,62 @@ export class GameScene extends Phaser.Scene {
       .setVisible(false);
     this.retryButton.on("pointerover", () => {
       if (this.retryButton?.visible) {
+        this.stopRetryButtonPulse();
+        this.retryButtonHoverTween?.stop();
         this.retryButton.setFillStyle(0xd22a3c, 1);
-        this.retryButton.setScale(1.06);
-        this.retryButtonGlow?.setAlpha(0.34);
+        this.retryButtonGlow?.setAlpha(0.5);
+        this.retryButtonHoverTween = this.tweens.add({
+          targets: [this.retryButton, this.retryButtonLabel].filter(Boolean),
+          scaleX: 1.07,
+          scaleY: 1.07,
+          duration: UI_MOTION.hoverInMs,
+          ease: UI_MOTION.easeHover
+        });
       }
     });
     this.retryButton.on("pointerout", () => {
       if (this.retryButton?.visible) {
+        this.retryButtonHoverTween?.stop();
         this.retryButton.setFillStyle(0xba1f2f, 0.98);
-        this.retryButton.setScale(1);
-        this.retryButtonGlow?.setAlpha(0.2);
+        this.retryButtonGlow?.setAlpha(0.32);
+        this.tweens.add({
+          targets: [this.retryButton, this.retryButtonLabel].filter(Boolean),
+          scaleX: 1,
+          scaleY: 1,
+          duration: UI_MOTION.hoverOutMs,
+          ease: UI_MOTION.easeHover
+        });
+        this.startRetryButtonPulse();
+      }
+    });
+    this.retryButton.on("pointerdown", () => {
+      if (this.retryButton?.visible) {
+        this.retryButtonHoverTween?.stop();
+        this.tweens.add({
+          targets: [this.retryButton, this.retryButtonLabel].filter(Boolean),
+          scaleX: 0.97,
+          scaleY: 0.97,
+          duration: UI_MOTION.pressMs,
+          ease: UI_MOTION.easeHover
+        });
       }
     });
     this.retryButton.on("pointerup", () => {
       if (this.retryButton?.visible && this.gameOver) {
-        this.restart();
+        this.retryButtonHoverTween?.stop();
+        this.tweens.add({
+          targets: [this.retryButton, this.retryButtonLabel].filter(Boolean),
+          scaleX: 1.04,
+          scaleY: 1.04,
+          duration: UI_MOTION.tapBounceMs,
+          yoyo: true,
+          ease: UI_MOTION.easeTap
+        });
+        this.time.delayedCall(80, () => {
+          if (this.gameOver) {
+            this.restart();
+          }
+        });
       }
     });
 
@@ -906,13 +983,15 @@ export class GameScene extends Phaser.Scene {
 
     this.gameOver = true;
     this.spawner.stop();
-    this.enemies.children.each((enemy) => {
+    const activeEnemies = this.enemies.getChildren().filter((enemy) => enemy?.active);
+    activeEnemies.forEach((enemy) => {
       if (!enemy?.active) {
         return;
       }
 
       this.stopEnemyFireSound(enemy);
       enemy.forceIdle?.();
+      enemy.destroy();
     });
     this.input.setDefaultCursor("auto");
     this.stopMagFireSound();
@@ -1003,9 +1082,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   createObjectiveBanner() {
-    const panelY = 8;
-    const panelWidth = Math.min(this.playWidth - 56, 900);
-    const panelHeight = 64;
+    const panelY = UI_LAYOUT.objectiveTopY;
+    const panelWidth = Math.min(this.playWidth - UI_LAYOUT.objectiveHorizontalInset, UI_LAYOUT.objectiveMaxWidth);
+    const panelHeight = UI_LAYOUT.objectivePanelHeight;
     const panelLeft = (this.playWidth - panelWidth) * 0.5;
     const panelRight = panelLeft + panelWidth;
     this.createUiBlurBackdrop(this.playWidth * 0.5, panelY + panelHeight * 0.5, panelWidth, panelHeight, 93, 16);
@@ -1018,11 +1097,18 @@ export class GameScene extends Phaser.Scene {
       .setAlpha(0.95);
 
     this.objectiveSweep = this.add
-      .rectangle(panelLeft + 46, panelY + panelHeight * 0.5, 96, panelHeight - 14, 0x7ff9ff, 0.075)
+      .rectangle(
+        panelLeft + UI_LAYOUT.objectiveSweepInset,
+        panelY + panelHeight * 0.5,
+        UI_LAYOUT.objectiveSweepWidth,
+        panelHeight - 14,
+        0x7ff9ff,
+        0.075
+      )
       .setDepth(96)
       .setBlendMode(Phaser.BlendModes.ADD);
 
-    this.objectiveText = this.add.text(this.playWidth / 2, panelY + 14, this.getLevelObjectiveText(), {
+    this.objectiveText = this.add.text(this.playWidth / 2, panelY + UI_LAYOUT.objectiveTextTopInset, this.getLevelObjectiveText(), {
       fontFamily: UI_DISPLAY_FONT,
       fontSize: "30px",
       color: "#dffcff",
@@ -1032,25 +1118,25 @@ export class GameScene extends Phaser.Scene {
     })
       .setOrigin(0.5, 0)
       .setDepth(97);
-    this.objectiveTextMaxWidth = panelWidth - 44;
+    this.objectiveTextMaxWidth = panelWidth - UI_LAYOUT.objectiveTextHorizontalPadding;
     this.setObjectiveText(this.getLevelObjectiveText());
 
     this.tweens.add({
       targets: this.objectiveSweep,
-      x: panelRight - 46,
-      duration: 1900,
+      x: panelRight - UI_LAYOUT.objectiveSweepInset,
+      duration: UI_MOTION.objectiveSweepMs,
       yoyo: true,
       repeat: -1,
-      ease: "Sine.InOut"
+      ease: UI_MOTION.easePulse
     });
 
     this.tweens.add({
       targets: this.objectivePanel,
       alpha: 0.82,
-      duration: 880,
+      duration: UI_MOTION.objectiveBreatheMs,
       yoyo: true,
       repeat: -1,
-      ease: "Sine.InOut"
+      ease: UI_MOTION.easePulse
     });
     this.hudIntroNodes.push(this.objectivePanel, this.objectiveSweep, this.objectiveText);
   }
@@ -1079,10 +1165,10 @@ export class GameScene extends Phaser.Scene {
       targets: this.objectiveText,
       scaleX: 1.06,
       scaleY: 1.06,
-      duration: 100,
+      duration: UI_MOTION.objectiveFlashMs,
       yoyo: true,
       repeat: 1,
-      ease: "Sine.Out"
+      ease: UI_MOTION.easeTap
     });
 
     const completeText = this.add.text(this.playWidth / 2, 80, "OBJECTIVE COMPLETE!", {
@@ -1100,8 +1186,8 @@ export class GameScene extends Phaser.Scene {
       targets: completeText,
       y: 62,
       alpha: 0,
-      duration: 600,
-      ease: "Quad.Out",
+      duration: UI_MOTION.objectiveCompleteFloatMs,
+      ease: UI_MOTION.easeHover,
       onComplete: () => completeText.destroy()
     });
   }
@@ -1174,10 +1260,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   createLifeBar() {
-    const y = this.scale.height - 28;
+    const y = this.scale.height - UI_LAYOUT.bottomHudYInset;
     const panelX = 514;
     const panelWidth = 260;
-    const panelHeight = 72;
+    const panelHeight = UI_LAYOUT.counterPanelHeight;
     this.createUiBlurBackdrop(panelX, y, panelWidth, panelHeight, 259);
     this.healthPanel = this.add
       .image(panelX, y, "hud-counter-ammo-panel")
@@ -1246,11 +1332,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   createBottomResourceCounters() {
-    const y = this.scale.height - 28;
+    const y = this.scale.height - UI_LAYOUT.bottomHudYInset;
     const resourceIconSize = 58;
+    const iconInsetFromPanelLeft = UI_LAYOUT.counterIconInsetFromPanelLeft;
     const ammoPanelX = 182;
     const ammoPanelWidth = 336;
-    const ammoPanelHeight = 72;
+    const ammoPanelHeight = UI_LAYOUT.counterPanelHeight;
     this.createUiBlurBackdrop(ammoPanelX, y, ammoPanelWidth, ammoPanelHeight, 259);
     this.ammoPanel = this.add
       .image(ammoPanelX, y, "hud-counter-ammo-panel")
@@ -1264,13 +1351,14 @@ export class GameScene extends Phaser.Scene {
     this.tweens.add({
       targets: ammoSweep,
       x: ammoPanelX + 108,
-      duration: 1750,
+      duration: UI_MOTION.counterSweepFastMs,
       yoyo: true,
       repeat: -1,
-      ease: "Sine.InOut"
+      ease: UI_MOTION.easePulse
     });
 
-    this.add.image(50, y, "hud-icon-ammo").setDisplaySize(resourceIconSize, resourceIconSize).setDepth(263);
+    const ammoIconX = ammoPanelX - ammoPanelWidth * 0.5 + iconInsetFromPanelLeft;
+    this.add.image(ammoIconX, y, "hud-icon-ammo").setDisplaySize(resourceIconSize, resourceIconSize).setDepth(263);
     this.ammoText = this.add
       .text(54, y, "100", {
         fontFamily: UI_DISPLAY_FONT,
@@ -1286,7 +1374,7 @@ export class GameScene extends Phaser.Scene {
 
     const grenadeX = PLAY_WIDTH - 110;
     const grenadePanelWidth = 196;
-    const grenadePanelHeight = 72;
+    const grenadePanelHeight = UI_LAYOUT.counterPanelHeight;
     this.createUiBlurBackdrop(grenadeX, y, grenadePanelWidth, grenadePanelHeight, 259);
     this.grenadePanel = this.add
       .image(grenadeX, y, "hud-counter-grenade-panel")
@@ -1300,13 +1388,14 @@ export class GameScene extends Phaser.Scene {
     this.tweens.add({
       targets: grenadeSweep,
       x: grenadeX + 56,
-      duration: 2050,
+      duration: UI_MOTION.counterSweepSlowMs,
       yoyo: true,
       repeat: -1,
-      ease: "Sine.InOut"
+      ease: UI_MOTION.easePulse
     });
 
-    this.add.image(grenadeX - 52, y, "hud-icon-grenade").setDisplaySize(resourceIconSize, resourceIconSize).setDepth(263);
+    const grenadeIconX = grenadeX - grenadePanelWidth * 0.5 + iconInsetFromPanelLeft;
+    this.add.image(grenadeIconX, y, "hud-icon-grenade").setDisplaySize(resourceIconSize, resourceIconSize).setDepth(263);
     const grenadeValueX = grenadeX + grenadePanelWidth * 0.5 - 18;
     const grenadeValueY = y;
     this.grenadeText = this.add
@@ -1469,9 +1558,9 @@ export class GameScene extends Phaser.Scene {
       targets: node,
       scaleX: originalScaleX * maxScale,
       scaleY: originalScaleY * maxScale,
-      duration: 90,
+      duration: UI_MOTION.hudPulseMs,
       yoyo: true,
-      ease: "Sine.Out",
+      ease: UI_MOTION.easeTap,
       onComplete: () => {
         if (node?.active) {
           node.setScale(originalScaleX, originalScaleY);
@@ -1749,13 +1838,35 @@ export class GameScene extends Phaser.Scene {
       .setDepth(1500)
       .setVisible(false);
 
-    this.failBlurLayers = [26, 56, 92].map((expand, index) =>
+    this.failBlurLayers = [22, 48, 82, 118].map((expand, index) =>
       this.add
         .rectangle(this.playWidth / 2, this.scale.height / 2, this.playWidth + expand, this.scale.height + expand, 0x0a0f14, 0)
         .setDepth(1497 + index)
         .setVisible(false)
     );
 
+  }
+
+  startRetryButtonPulse() {
+    if (!this.retryButton?.visible || !this.retryButtonLabel?.visible) {
+      return;
+    }
+
+    this.retryButtonPulseTween?.stop();
+    this.retryButtonPulseTween = this.tweens.add({
+      targets: [this.retryButton, this.retryButtonLabel],
+      scaleX: 1.024,
+      scaleY: 1.024,
+      duration: UI_MOTION.buttonPulseMs,
+      ease: UI_MOTION.easePulse,
+      yoyo: true,
+      repeat: -1
+    });
+  }
+
+  stopRetryButtonPulse() {
+    this.retryButtonPulseTween?.stop();
+    this.retryButtonPulseTween = null;
   }
 
   playMissionFailedGlitch() {
@@ -1769,17 +1880,26 @@ export class GameScene extends Phaser.Scene {
       { dx: -6, dy: 1, tint: "#ff9aa0" },
       { dx: 5, dy: -2, tint: "#9de9ff" },
       { dx: -3, dy: 2, tint: "#ffd6de" },
+      { dx: 2, dy: -1, tint: "#f8fbff" },
       { dx: 0, dy: 0, tint: "#f8fbff" }
     ];
+    this.failGlitchGhostLeft?.setVisible(true).setAlpha(0.5);
+    this.failGlitchGhostRight?.setVisible(true).setAlpha(0.5);
 
     jumps.forEach((jump, index) => {
-      this.time.delayedCall(index * 55, () => {
+      this.time.delayedCall(index * UI_MOTION.cinematicGlitchStepMs, () => {
         if (!this.gameStatusText?.active || !this.gameOver) {
           return;
         }
 
         this.gameStatusText.setPosition(originalX + jump.dx, originalY + jump.dy);
         this.gameStatusText.setColor(jump.tint);
+        this.failGlitchGhostLeft?.setPosition(originalX + jump.dx - 5, originalY + jump.dy + 1);
+        this.failGlitchGhostRight?.setPosition(originalX + jump.dx + 5, originalY + jump.dy - 1);
+        if (index === jumps.length - 1) {
+          this.failGlitchGhostLeft?.setAlpha(0.22);
+          this.failGlitchGhostRight?.setAlpha(0.22);
+        }
       });
     });
   }
@@ -1789,8 +1909,11 @@ export class GameScene extends Phaser.Scene {
     this.reloadWarningText?.setVisible(false);
     this.comboText?.setVisible(false);
     this.failOverlay?.setVisible(true).setAlpha(0);
-    this.failBlurLayers.forEach((layer) => layer.setVisible(true).setAlpha(0));
+    this.failBlurLayers.forEach((layer, index) => {
+      layer.setVisible(true).setAlpha(0).setScale(1.05 + index * 0.015);
+    });
 
+    this.stopRetryButtonPulse();
     this.retryButton?.setVisible(false).setScale(0.96).setAlpha(0);
     this.retryButtonLabel?.setVisible(false).setAlpha(0);
     this.retryButtonGlow?.setVisible(false).setAlpha(0);
@@ -1799,22 +1922,47 @@ export class GameScene extends Phaser.Scene {
         .setText("MISSION FAILED")
         .setVisible(true)
         .setAlpha(0)
-        .setScale(0.9);
-      this.gameStatusText.setShadow(0, 0, "#ff3535", 22, true, true);
+        .setScale(0.84);
+      this.gameStatusText.setShadow(0, 0, "#ff2937", 34, true, true);
     }
+    this.failGlitchGhostLeft?.setVisible(false).setAlpha(0).setScale(0.84);
+    this.failGlitchGhostRight?.setVisible(false).setAlpha(0).setScale(0.84);
 
     this.cameras.main.setZoom(1);
     this.cameras.main.shake(220, 0.0034);
+    this.failZoomTween?.stop();
+    this.cameras.main.setZoom(1);
+    if (!this.failBackgroundBlurFx && this.backgroundImage?.preFX?.addBlur) {
+      this.backgroundImage.preFX.setPadding?.(12);
+      this.failBackgroundBlurFx = this.backgroundImage.preFX.addBlur(1, 0, 0, 0, 0xffffff, 6);
+      this.failBackgroundBlurFx?.setActive(false);
+    }
+    if (this.failBackgroundBlurFx) {
+      this.failBackgroundBlurFx.setActive(true);
+      this.failBackgroundBlurFx.x = 0;
+      this.failBackgroundBlurFx.y = 0;
+      this.failBackgroundBlurFx.strength = 0;
+      this.tweens.add({
+        targets: this.failBackgroundBlurFx,
+        x: 2.6,
+        y: 2.6,
+        strength: 1.45,
+      duration: 500,
+      ease: UI_MOTION.easeTap
+      });
+    }
     this.tweens.add({
       targets: this.failOverlay,
-      alpha: 0.75,
-      duration: 320
+      alpha: 0.84,
+      duration: UI_MOTION.cinematicOverlayInMs
     });
     this.failBlurLayers.forEach((layer, index) => {
       this.tweens.add({
         targets: layer,
-        alpha: 0.18 + index * 0.07,
-        duration: 320 + index * 90
+        alpha: 0.13 + index * 0.07,
+        scaleX: 1,
+        scaleY: 1,
+        duration: UI_MOTION.cinematicOverlayInMs + index * 90
       });
     });
     this.tweens.add({
@@ -1822,12 +1970,22 @@ export class GameScene extends Phaser.Scene {
       alpha: 1,
       scaleX: 1,
       scaleY: 1,
-      duration: 240,
-      delay: 120,
-      ease: "Back.Out"
+      duration: UI_MOTION.cinematicStatusPopMs,
+      delay: UI_MOTION.cinematicStatusPopDelayMs,
+      ease: UI_MOTION.easeCinematicPop
+    });
+    this.failTextFlickerTween?.stop();
+    this.failTextFlickerTween = this.tweens.add({
+      targets: this.gameStatusText,
+      alpha: { from: 0.9, to: 1 },
+      duration: 110,
+      delay: 500,
+      yoyo: true,
+      repeat: 4
     });
 
     this.time.delayedCall(250, () => this.playMissionFailedGlitch());
+    this.time.delayedCall(720, () => this.playMissionFailedGlitch());
     this.time.delayedCall(420, () => {
       if (!this.gameOver) {
         return;
@@ -1841,24 +1999,37 @@ export class GameScene extends Phaser.Scene {
         alpha: 1,
         scaleX: 1,
         scaleY: 1,
-        duration: 240,
-        ease: "Quad.Out"
+        duration: UI_MOTION.buttonRevealMs,
+        ease: UI_MOTION.easeHover
       });
       this.tweens.add({
         targets: this.retryButtonGlow,
-        alpha: 0.34,
-        duration: 640,
+        alpha: 0.4,
+        duration: UI_MOTION.glowPulseMs,
         yoyo: true,
         repeat: -1,
-        ease: "Sine.InOut"
+        ease: UI_MOTION.easePulse
       });
+      this.startRetryButtonPulse();
     });
   }
 
   hideMissionFailScreen() {
+    this.stopRetryButtonPulse();
+    this.retryButtonHoverTween?.stop();
+    this.failZoomTween?.stop();
+    this.failTextFlickerTween?.stop();
     this.failOverlay?.setVisible(false).setAlpha(0);
     this.failBlurLayers.forEach((layer) => layer.setVisible(false).setAlpha(0));
     this.retryButtonGlow?.setVisible(false).setAlpha(0);
+    this.failGlitchGhostLeft?.setVisible(false).setAlpha(0);
+    this.failGlitchGhostRight?.setVisible(false).setAlpha(0);
+    if (this.failBackgroundBlurFx) {
+      this.failBackgroundBlurFx.setActive(false);
+      this.failBackgroundBlurFx.x = 0;
+      this.failBackgroundBlurFx.y = 0;
+      this.failBackgroundBlurFx.strength = 0;
+    }
     this.cameras.main.setZoom(1);
   }
 

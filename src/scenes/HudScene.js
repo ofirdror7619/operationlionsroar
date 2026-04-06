@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { HUD_PANEL_WIDTH, PLAY_WIDTH } from "../game/config";
+import { UI_LAYOUT, UI_MOTION } from "../game/uiTokens";
 
 const UI_DISPLAY_FONT = "'Oxanium', 'Barlow Condensed', sans-serif";
 const UI_BODY_FONT = "'Share Tech Mono', 'Chakra Petch', monospace";
@@ -49,6 +50,7 @@ export class HudScene extends Phaser.Scene {
     this.weaponNameText = null;
     this.continueButton = null;
     this.continueButtonLabel = null;
+    this.continueButtonHoverTween = null;
     this.gameSceneRef = null;
     this.hudUpdateHandler = null;
     this.hudGameOverHandler = null;
@@ -96,12 +98,40 @@ export class HudScene extends Phaser.Scene {
 
     this.continueButton.on("pointerover", () => {
       if (this.continueButton?.visible) {
+        this.continueButtonHoverTween?.stop();
         this.continueButton.setFillStyle(UI_COLORS.buttonHover, 1);
+        this.continueButtonHoverTween = this.tweens.add({
+          targets: [this.continueButton, this.continueButtonLabel].filter(Boolean),
+          scaleX: 1.05,
+          scaleY: 1.05,
+          duration: UI_MOTION.hoverInMs,
+          ease: UI_MOTION.easeHover
+        });
       }
     });
     this.continueButton.on("pointerout", () => {
       if (this.continueButton?.visible) {
+        this.continueButtonHoverTween?.stop();
         this.continueButton.setFillStyle(UI_COLORS.buttonFill, 0.98);
+        this.tweens.add({
+          targets: [this.continueButton, this.continueButtonLabel].filter(Boolean),
+          scaleX: 1,
+          scaleY: 1,
+          duration: UI_MOTION.hoverOutMs,
+          ease: UI_MOTION.easeHover
+        });
+      }
+    });
+    this.continueButton.on("pointerdown", () => {
+      if (this.continueButton?.visible) {
+        this.continueButtonHoverTween?.stop();
+        this.tweens.add({
+          targets: [this.continueButton, this.continueButtonLabel].filter(Boolean),
+          scaleX: 0.97,
+          scaleY: 0.97,
+          duration: UI_MOTION.pressMs,
+          ease: UI_MOTION.easeHover
+        });
       }
     });
     this.continueButton.on("pointerup", () => {
@@ -109,7 +139,20 @@ export class HudScene extends Phaser.Scene {
         return;
       }
 
-      this.gameSceneRef.events.emit("hud:continue");
+      this.continueButtonHoverTween?.stop();
+      this.tweens.add({
+        targets: [this.continueButton, this.continueButtonLabel].filter(Boolean),
+        scaleX: 1.03,
+        scaleY: 1.03,
+        duration: UI_MOTION.tapBounceMs,
+        yoyo: true,
+        ease: UI_MOTION.easeTap
+      });
+      this.time.delayedCall(70, () => {
+        if (this.gameSceneRef?.events) {
+          this.gameSceneRef.events.emit("hud:continue");
+        }
+      });
     });
 
     this.cleanupGameEvents();
@@ -268,7 +311,7 @@ export class HudScene extends Phaser.Scene {
   }
 
   createBottomResourceCounters() {
-    const y = this.scale.height - 26;
+    const y = this.scale.height - UI_LAYOUT.bottomHudYInset;
     const resourceIconSize = 68;
     const ammoBox = this.add
       .rectangle(112, y, 206, 62, UI_COLORS.boxFill, 0.88)

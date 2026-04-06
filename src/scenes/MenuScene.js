@@ -248,7 +248,7 @@ export class MenuScene extends Phaser.Scene {
     this.startBlinkTween = null;
     this.typingEvent?.remove(false);
     this.typingEvent = null;
-    this.scene.start("game");
+    this.scene.start("operation-center");
   }
 
   startBackgroundMusic() {

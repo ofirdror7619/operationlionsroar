@@ -1,4 +1,6 @@
 import Phaser from "phaser";
+import operationCenterBackgroundUrl from "../assets/images/operation-center/background.png";
+import storeBackgroundUrl from "../assets/images/store/background.png";
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -6,6 +8,8 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   preload() {
+    this.load.image("operation-center-bg", operationCenterBackgroundUrl);
+    this.load.image("store-bg", storeBackgroundUrl);
     this.load.image("bg", "assets/images/game/background.png");
     this.load.image("health-bar", "assets/images/hud/health-bar.png");
     this.load.image("weapon-m203", "assets/images/hud/m-203-hud.png");

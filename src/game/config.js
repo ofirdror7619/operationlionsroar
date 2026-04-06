@@ -2,6 +2,8 @@ import Phaser from "phaser";
 import { BootScene } from "../scenes/BootScene";
 import { PreloadScene } from "../scenes/PreloadScene";
 import { MenuScene } from "../scenes/MenuScene";
+import { OperationCenterScene } from "../scenes/OperationCenterScene";
+import { StoreScene } from "../scenes/StoreScene";
 import { GameScene } from "../scenes/GameScene";
 
 export const GAME_WIDTH = 960;
@@ -22,7 +24,7 @@ export const gameConfig = {
       debug: false
     }
   },
-  scene: [BootScene, PreloadScene, MenuScene, GameScene],
+  scene: [BootScene, PreloadScene, MenuScene, OperationCenterScene, StoreScene, GameScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH
