@@ -26,7 +26,7 @@ export class MenuScene extends Phaser.Scene {
   create() {
     this.startBackgroundMusic();
 
-    const { width, height } = this.scale;
+    const { height } = this.scale;
     const playWidth = PLAY_WIDTH;
     const panelLeft = playWidth;
     const panelRight = playWidth + HUD_PANEL_WIDTH;

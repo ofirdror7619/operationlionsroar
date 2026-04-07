@@ -292,7 +292,7 @@ export class HudScene extends Phaser.Scene {
   createBottomResourceCounters() {
     const y = this.scale.height - UI_LAYOUT.bottomHudYInset;
     const resourceIconSize = 68;
-    const ammoBox = this.add
+    this.add
       .rectangle(112, y, 206, 62, UI_COLORS.boxFill, 0.88)
       .setStrokeStyle(1, UI_COLORS.boxStroke, 0.78)
       .setDepth(260)
@@ -310,7 +310,7 @@ export class HudScene extends Phaser.Scene {
       .setOrigin(0, 0.52);
 
     const grenadeX = PLAY_WIDTH - 88;
-    const grenadeBox = this.add
+    this.add
       .rectangle(grenadeX, y, 164, 62, UI_COLORS.boxFill, 0.88)
       .setStrokeStyle(1, UI_COLORS.boxStroke, 0.78)
       .setDepth(260)

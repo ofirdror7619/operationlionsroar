@@ -6,252 +6,72 @@ import { MAX_MISSION_ID, MISSION_REWARD_BY_LEVEL } from "../game/progressionConf
 import { getGrenadeBlastRadius, getWeaponMaxAmmoCapacity } from "../game/upgradeConfig";
 import { UI_LAYOUT, UI_MOTION } from "../game/uiTokens";
 import { DEFAULT_SPAWN_POINTS } from "../game/enemySpawnerConfig";
-
-const MUSIC_LOOP_START_SECONDS = 15;
-const MUSIC_LOOP_MARKER = "main-loop";
-const MAGAZINE_DROP_CHANCE = 0.09;
-const MAGAZINE_AMMO_REWARD = 20;
-const MAGAZINE_MAX_ACTIVE = 2;
-const MAGAZINE_LIFETIME_MS = 8000;
-const MEDIKIT_DROP_CHANCE = 0.06;
-const MEDIKIT_HEALTH_REWARD = 20;
-const MEDIKIT_MAX_ACTIVE = 2;
-const MEDIKIT_LIFETIME_MS = 8000;
-const GRENADE_PICKUP_DROP_CHANCE = 0.03;
-const GRENADE_PICKUP_REWARD = 1;
-const GRENADE_PICKUP_MAX_ACTIVE = 1;
-const GRENADE_PICKUP_LIFETIME_MS = 8000;
-const MAG_WEAPON_PICKUP_DROP_CHANCE = 0.015;
-const MAG_WEAPON_PICKUP_MAX_ACTIVE = 1;
-const MAG_WEAPON_PICKUP_LIFETIME_MS = 9000;
-const DEFAULT_MAG_MODE_DURATION_MS = 20000;
-const LEVEL_2_MAG_MODE_DURATION_MS = 18000;
-const LEVEL_2_KILL_TARGET = 50;
-const LEVEL_4_KILL_TARGET = 40;
-const BASE_FIRE_COOLDOWN_MS = 150;
-const MAG_FIRE_COOLDOWN_MS = 70;
-const MAG_AIM_ASSIST_RADIUS = 44;
-const TAVOR_AIM_ASSIST_RADIUS = 50;
-const ENEMY_FIRE_DAMAGE = 12;
-const GRENADE_ENEMY_FIRE_DAMAGE = 18;
-const CERAMIC_VEST_DAMAGE_MULTIPLIER = 0.5;
-const BASE_ENEMY_AIM_DURATION_MS = 3000;
-const LEVEL_3_ENEMY_AIM_DURATION_MS = 1000;
-const WEAPON_SOURCE_FRAME_WIDTH = 384;
-const WEAPON_SOURCE_FRAME_HEIGHT = 256;
-const WEAPON_LEFT_CROP_PX = 78;
-const WEAPON_BOTTOM_CROP_PX = 22;
-const WEAPON_MUZZLE_OFFSET_X = 246;
-const WEAPON_MUZZLE_OFFSET_Y = 178;
-const WEAPON_TILT_DEGREES = -6.5;
-const WEAPON_TILT_Y_KICK = -7;
-const WEAPON_TILT_X_KICK = 0;
-const WEAPON_TILT_IN_MS = 38;
-const WEAPON_TILT_OUT_MS = 110;
-const WEAPON_GRENADE_ANIM_FPS = 10;
-const WEAPON_AIM_FOLLOW_X_MAX = 26;
-const WEAPON_AIM_FOLLOW_Y_MAX = 18;
-const WEAPON_AIM_FOLLOW_ANGLE_MAX = 5;
-const WEAPON_AIM_FOLLOW_LERP = 0.2;
-const WEAPON_SHADOW_OFFSET_X = -128;
-const WEAPON_SHADOW_OFFSET_Y = -22;
-const UI_DISPLAY_FONT = "'Barlow Condensed', 'Teko', sans-serif";
-const HUD_AMMO_SEGMENTS = 10;
-const HUD_HEALTH_SEGMENTS = 10;
-const HUD_GRENADE_ICON_SLOTS = 5;
-const LOW_HP_THRESHOLD = 30;
-const LOW_AMMO_THRESHOLD = 12;
-const COMBO_RESET_WINDOW_MS = 2200;
-const KILL_FEED_MAX_ITEMS = 4;
-const RETRY_BUTTON_BASE_TINT = 0xff788a;
-const RETRY_BUTTON_HOVER_TINT = 0xff96a7;
-const RETRY_BUTTON_GLOW_TINT = 0xff4d66;
-const LEVEL_4_HOSTAGE_ZONE = {
-  x1: 0.463,
-  x2: 0.55,
-  y1: 0.397,
-  y2: 0.625
-};
-const LEVEL_4_SPAWN_POINTS = [
-  { id: "A", x: 0.12, y: 0.528, side: "left", height: 0.43, lowerBodyHideRatio: 0, bottomTrimRatio: 0, enemyType: "cleanShooter" },
-  { id: "D", x: 0.365, y: 0.537, side: "left", height: 0.4, lowerBodyHideRatio: 0.42, bottomTrimRatio: 0, enemyType: "cleanShooter" },
-  { id: "E", x: 0.409, y: 0.488, side: "left", height: 0.37, lowerBodyHideRatio: 0.3, bottomTrimRatio: 0, enemyType: "cleanShooter" },
-  { id: "C", x: 0.632, y: 0.528, side: "right", height: 0.41, lowerBodyHideRatio: 0, bottomTrimRatio: 0, enemyType: "cleanShooter" },
-  { id: "B", x: 0.902, y: 0.66, side: "right", height: 0.52, lowerBodyHideRatio: 0, bottomTrimRatio: 0, enemyType: "cleanShooter" }
-];
-const PHASE_DIRECTOR_CONFIGS = {
-  1: {
-    durationMs: 110000,
-    extractionStartMs: 105000,
-    phases: [
-      {
-        id: "L1-A",
-        startMs: 0,
-        endMs: 30000,
-        spawnDelayMs: 1600,
-        maxActive: 4,
-        enemyWeights: { enemy: 0.8, "enemy-grenade": 0.2 },
-        magazineDropChance: 0.12,
-        medikitDropChance: 0.08,
-        grenadePickupDropChance: 0.03
-      },
-      {
-        id: "L1-B",
-        startMs: 30000,
-        endMs: 75000,
-        spawnDelayMs: 1200,
-        maxActive: 6,
-        enemyWeights: { enemy: 0.65, "enemy-grenade": 0.35 },
-        magazineDropChance: 0.09,
-        medikitDropChance: 0.06,
-        grenadePickupDropChance: 0.025
-      },
-      {
-        id: "L1-C",
-        startMs: 75000,
-        endMs: 105000,
-        spawnDelayMs: 900,
-        maxActive: 7,
-        enemyWeights: { enemy: 0.5, "enemy-grenade": 0.5 },
-        magazineDropChance: 0.07,
-        medikitDropChance: 0.04,
-        grenadePickupDropChance: 0.02
-      }
-    ]
-  },
-  2: {
-    durationMs: 0,
-    extractionStartMs: 0,
-    phases: [
-      {
-        id: "L2-A",
-        startMs: 0,
-        endMs: 35000,
-        spawnDelayMs: 1100,
-        maxActive: 7,
-        enemyWeights: { enemy: 0.62, "enemy-grenade": 0.38 },
-        magazineDropChance: 0.08,
-        medikitDropChance: 0.05,
-        grenadePickupDropChance: 0.022
-      },
-      {
-        id: "L2-B",
-        startMs: 35000,
-        endMs: 80000,
-        spawnDelayMs: 920,
-        maxActive: 8,
-        enemyWeights: { enemy: 0.54, "enemy-grenade": 0.46 },
-        magazineDropChance: 0.07,
-        medikitDropChance: 0.04,
-        grenadePickupDropChance: 0.02
-      },
-      {
-        id: "L2-C",
-        startMs: 80000,
-        endMs: 120000,
-        spawnDelayMs: 780,
-        maxActive: 9,
-        enemyWeights: { enemy: 0.5, "enemy-grenade": 0.5 },
-        magazineDropChance: 0.06,
-        medikitDropChance: 0.03,
-        grenadePickupDropChance: 0.018
-      },
-      {
-        id: "L2-D",
-        startMs: 120000,
-        endMs: Number.POSITIVE_INFINITY,
-        spawnDelayMs: 680,
-        maxActive: 10,
-        enemyWeights: { enemy: 0.44, "enemy-grenade": 0.56 },
-        magazineDropChance: 0.05,
-        medikitDropChance: 0.025,
-        grenadePickupDropChance: 0.015
-      }
-    ]
-  },
-  3: {
-    durationMs: 150000,
-    extractionStartMs: 142000,
-    phases: [
-      {
-        id: "L3-A",
-        startMs: 0,
-        endMs: 50000,
-        spawnDelayMs: 900,
-        maxActive: 8,
-        enemyWeights: { enemy: 0.52, "enemy-grenade": 0.48 },
-        magazineDropChance: 0.06,
-        medikitDropChance: 0.035,
-        grenadePickupDropChance: 0.018
-      },
-      {
-        id: "L3-B",
-        startMs: 50000,
-        endMs: 105000,
-        spawnDelayMs: 760,
-        maxActive: 9,
-        enemyWeights: { enemy: 0.45, "enemy-grenade": 0.55 },
-        magazineDropChance: 0.05,
-        medikitDropChance: 0.03,
-        grenadePickupDropChance: 0.015
-      },
-      {
-        id: "L3-C",
-        startMs: 105000,
-        endMs: 142000,
-        spawnDelayMs: 650,
-        maxActive: 10,
-        enemyWeights: { enemy: 0.38, "enemy-grenade": 0.62 },
-        magazineDropChance: 0.045,
-        medikitDropChance: 0.022,
-        grenadePickupDropChance: 0.012
-      }
-    ]
-  },
-  4: {
-    durationMs: 0,
-    extractionStartMs: 0,
-    phases: [
-      {
-        id: "L4-A",
-        startMs: 0,
-        endMs: 42000,
-        spawnDelayMs: 1250,
-        maxActive: 4,
-        enemyWeights: { enemy: 0.78, "enemy-grenade": 0.22 },
-        magazineDropChance: 0.09,
-        medikitDropChance: 0.065,
-        grenadePickupDropChance: 0.026
-      },
-      {
-        id: "L4-B",
-        startMs: 42000,
-        endMs: 90000,
-        spawnDelayMs: 980,
-        maxActive: 5,
-        enemyWeights: { enemy: 0.66, "enemy-grenade": 0.34 },
-        magazineDropChance: 0.075,
-        medikitDropChance: 0.05,
-        grenadePickupDropChance: 0.021
-      },
-      {
-        id: "L4-C",
-        startMs: 90000,
-        endMs: 122000,
-        spawnDelayMs: 840,
-        maxActive: 6,
-        enemyWeights: { enemy: 0.58, "enemy-grenade": 0.42 },
-        magazineDropChance: 0.06,
-        medikitDropChance: 0.038,
-        grenadePickupDropChance: 0.017
-      }
-    ]
-  }
-};
+import {
+  LEVEL_2_KILL_TARGET,
+  LEVEL_4_HOSTAGE_ZONE,
+  LEVEL_4_KILL_TARGET,
+  LEVEL_4_SPAWN_POINTS,
+  PHASE_DIRECTOR_CONFIGS
+} from "../game/missionDirectorConfig";
+import {
+  BASE_ENEMY_AIM_DURATION_MS,
+  BASE_FIRE_COOLDOWN_MS,
+  CERAMIC_VEST_DAMAGE_MULTIPLIER,
+  COMBO_RESET_WINDOW_MS,
+  DEFAULT_MAG_MODE_DURATION_MS,
+  ENEMY_FIRE_DAMAGE,
+  GRENADE_ENEMY_FIRE_DAMAGE,
+  GRENADE_PICKUP_DROP_CHANCE,
+  GRENADE_PICKUP_LIFETIME_MS,
+  GRENADE_PICKUP_MAX_ACTIVE,
+  GRENADE_PICKUP_REWARD,
+  HUD_AMMO_SEGMENTS,
+  HUD_GRENADE_ICON_SLOTS,
+  HUD_HEALTH_SEGMENTS,
+  KILL_FEED_MAX_ITEMS,
+  LEVEL_2_MAG_MODE_DURATION_MS,
+  LEVEL_3_ENEMY_AIM_DURATION_MS,
+  LOW_AMMO_THRESHOLD,
+  LOW_HP_THRESHOLD,
+  MAG_AIM_ASSIST_RADIUS,
+  MAG_FIRE_COOLDOWN_MS,
+  MAG_WEAPON_PICKUP_DROP_CHANCE,
+  MAG_WEAPON_PICKUP_LIFETIME_MS,
+  MAG_WEAPON_PICKUP_MAX_ACTIVE,
+  MAGAZINE_AMMO_REWARD,
+  MAGAZINE_DROP_CHANCE,
+  MAGAZINE_LIFETIME_MS,
+  MAGAZINE_MAX_ACTIVE,
+  MEDIKIT_DROP_CHANCE,
+  MEDIKIT_HEALTH_REWARD,
+  MEDIKIT_LIFETIME_MS,
+  MEDIKIT_MAX_ACTIVE,
+  MUSIC_LOOP_MARKER,
+  MUSIC_LOOP_START_SECONDS,
+  RETRY_BUTTON_BASE_TINT,
+  RETRY_BUTTON_GLOW_TINT,
+  RETRY_BUTTON_HOVER_TINT,
+  TAVOR_AIM_ASSIST_RADIUS,
+  UI_DISPLAY_FONT,
+  WEAPON_AIM_FOLLOW_ANGLE_MAX,
+  WEAPON_AIM_FOLLOW_LERP,
+  WEAPON_AIM_FOLLOW_X_MAX,
+  WEAPON_AIM_FOLLOW_Y_MAX,
+  WEAPON_BOTTOM_CROP_PX,
+  WEAPON_GRENADE_ANIM_FPS,
+  WEAPON_LEFT_CROP_PX,
+  WEAPON_MUZZLE_OFFSET_X,
+  WEAPON_MUZZLE_OFFSET_Y,
+  WEAPON_SHADOW_OFFSET_X,
+  WEAPON_SHADOW_OFFSET_Y,
+  WEAPON_SOURCE_FRAME_HEIGHT,
+  WEAPON_SOURCE_FRAME_WIDTH
+} from "../game/gameplayTuning";
 
 export class GameScene extends Phaser.Scene {
   constructor() {
     super("game");
+    this.maxLevelTimerStepMs = 100;
     this.levelId = 1;
     this.state = null;
     this.enemies = null;
@@ -262,7 +82,7 @@ export class GameScene extends Phaser.Scene {
     this.spawner = null;
     this.damageOverlay = null;
     this.magModeEndsAt = 0;
-    this.levelEndsAt = 0;
+    this.levelDurationMs = 0;
     this.hasSpawnedMagWeaponPickup = false;
     this.lastShotAtMs = -99999;
     this.magTimerText = null;
@@ -360,7 +180,7 @@ export class GameScene extends Phaser.Scene {
     this.weaponRecoilAngle = 0;
     this.weaponAmmoById = {};
     this.hasContinuedAfterMissionComplete = false;
-    this.levelStartedAt = 0;
+    this.levelElapsedMs = 0;
     this.currentDirectorPhaseId = "";
     this.isExtractionWindowActive = false;
     this.hostageZoneRect = null;
@@ -382,7 +202,8 @@ export class GameScene extends Phaser.Scene {
     this.magModeEndsAt = 0;
     this.hasSpawnedMagWeaponPickup = false;
     this.lastShotAtMs = -99999;
-    this.levelStartedAt = this.time.now;
+    this.levelElapsedMs = 0;
+    this.levelDurationMs = this.getLevelDurationMs();
     this.currentDirectorPhaseId = "";
     this.isExtractionWindowActive = false;
     this.hostageZoneRect = this.createHostageZoneRect();
@@ -635,8 +456,6 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    const levelDurationMs = this.getLevelDurationMs();
-    this.levelEndsAt = levelDurationMs > 0 ? this.time.now + levelDurationMs : 0;
   }
 
   update(_time, delta) {
@@ -644,6 +463,9 @@ export class GameScene extends Phaser.Scene {
     if (this.gameOver || this.levelComplete || this.isAbortConfirmVisible()) {
       return;
     }
+
+    const safeDeltaMs = Phaser.Math.Clamp(delta, 0, this.maxLevelTimerStepMs);
+    this.levelElapsedMs += safeDeltaMs;
 
     this.updatePhaseDirector();
 
@@ -1258,11 +1080,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   checkLevelEnd() {
-    if (this.levelEndsAt <= 0) {
+    if (this.levelDurationMs <= 0) {
       return;
     }
 
-    if (this.time.now >= this.levelEndsAt) {
+    if (this.getElapsedLevelMs() >= this.levelDurationMs) {
       this.setLevelComplete();
     }
   }
@@ -1499,7 +1321,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   getElapsedLevelMs() {
-    return Math.max(0, this.time.now - this.levelStartedAt);
+    return Math.max(0, this.levelElapsedMs);
   }
 
   getCurrentPhaseConfig() {
@@ -1553,11 +1375,12 @@ export class GameScene extends Phaser.Scene {
 
   isExtractionPhaseActive() {
     const extractionStartMs = this.getLevelExtractionStartMs();
-    if (extractionStartMs <= 0 || this.levelEndsAt <= 0) {
+    if (extractionStartMs <= 0 || this.levelDurationMs <= 0) {
       return false;
     }
 
-    return this.getElapsedLevelMs() >= extractionStartMs && this.time.now < this.levelEndsAt;
+    const elapsedMs = this.getElapsedLevelMs();
+    return elapsedMs >= extractionStartMs && elapsedMs < this.levelDurationMs;
   }
 
   getLevelObjectiveText() {
@@ -1572,8 +1395,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     const fallbackSeconds = Math.floor(this.getLevelDurationMs() / 1000);
-    const secondsToSurvive = this.levelEndsAt > 0
-      ? Math.max(0, Math.ceil((this.levelEndsAt - this.time.now) / 1000))
+    const secondsToSurvive = this.levelDurationMs > 0
+      ? Math.max(0, Math.ceil((this.levelDurationMs - this.getElapsedLevelMs()) / 1000))
       : fallbackSeconds;
     if (this.isHostageProtectionLevel() && !this.isExtractionPhaseActive()) {
       return `OBJECTIVE: PROTECT HOSTAGE (${secondsToSurvive}s)`;
@@ -3289,9 +3112,6 @@ export class GameScene extends Phaser.Scene {
       const idleFrame0 = this.textures.exists("weapon-m203-idle-custom-aligned-0")
         ? { key: "weapon-m203-idle-custom-aligned-0" }
         : { key: "weapon-m203-idle-custom", frame: 0 };
-      const idleFrame1 = this.textures.exists("weapon-m203-idle-custom-aligned-1")
-        ? { key: "weapon-m203-idle-custom-aligned-1" }
-        : { key: "weapon-m203-idle-custom", frame: 1 };
       const fireFrame0 = this.textures.exists("weapon-m203-firing-custom-aligned-0")
         ? { key: "weapon-m203-firing-custom-aligned-0" }
         : { key: "weapon-m203-firing-custom", frame: 0 };
