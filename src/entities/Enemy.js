@@ -58,6 +58,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.state = ENEMY_STATE.IDLE;
     this.stateElapsedMs = 0;
     this.anchorX = Math.round(x);
+    this.anchorY = Math.round(y);
     this.flipX = options.flipX ?? false;
     this.baseLowerBodyHideRatio = Phaser.Math.Clamp(options.lowerBodyHideRatio ?? 0, 0, 0.75);
     this.bottomTrimRatio = Phaser.Math.Clamp(options.bottomTrimRatio ?? 0.1, 0, 0.2);
@@ -65,6 +66,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.visibleBodyRatio = 1 - this.lowerBodyHideRatio;
     this.enableLowerBodyOcclusion = options.enableLowerBodyOcclusion ?? false;
     this.animKeys = this.ensureAnimations(resolvedTextureKey);
+    this.groundShadow = null;
 
     const targetHeight = options.targetHeight ?? scene.scale.height * 0.26;
     const visualScaleMultiplier = options.visualScaleMultiplier ?? 0.62;
@@ -76,12 +78,14 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setScale((targetHeight * visualScaleMultiplier) / referenceHeight);
     this.play(this.animKeys.idle);
     this.on(Phaser.Animations.Events.ANIMATION_UPDATE, this.alignToCurrentFrame, this);
-    this.y = Math.round(this.y);
+    this.y = this.anchorY;
     this.alignToCurrentFrame();
     this.applyLowerBodyOcclusion();
     this.setVelocity(0, 0);
     this.setImmovable(true);
-    this.setDepth(Math.floor(y));
+    this.setDepth(Math.floor(this.anchorY));
+    this.createGroundShadow();
+    this.syncGroundShadow();
   }
 
   updateEnemy(delta) {
@@ -116,6 +120,15 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.play(this.animKeys.dead);
     this.alignToCurrentFrame();
     this.applyLowerBodyOcclusion();
+    if (this.groundShadow?.active) {
+      this.scene.tweens.add({
+        targets: this.groundShadow,
+        alpha: 0,
+        scaleX: this.groundShadow.scaleX * 0.9,
+        scaleY: this.groundShadow.scaleY * 0.9,
+        duration: 240
+      });
+    }
 
     if (this.body) {
       this.body.enable = false;
@@ -207,7 +220,33 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const baseOffset = FRAME_CENTER_X_OFFSETS[frameIndex] ?? 0;
     const adjustedOffset = this.flipX ? -baseOffset : baseOffset;
     this.x = Math.round(this.anchorX - adjustedOffset);
-    this.y = Math.round(this.y);
+    this.y = Math.round(this.anchorY);
+    this.syncGroundShadow();
+  }
+
+  createGroundShadow() {
+    const width = Math.max(28, Math.round(this.displayWidth * 0.33));
+    const height = Math.max(10, Math.round(this.displayHeight * 0.09));
+    this.groundShadow = this.scene.add
+      .ellipse(this.x, this.y + this.displayHeight * 0.46, width, height, 0x000000, 0.17)
+      .setDepth(Math.floor(this.y) - 1);
+  }
+
+  syncGroundShadow() {
+    if (!this.groundShadow?.active) {
+      return;
+    }
+
+    this.groundShadow.x = this.x;
+    this.groundShadow.y = this.y + this.displayHeight * 0.46;
+    this.groundShadow.depth = (this.depth ?? Math.floor(this.y)) - 1;
+  }
+
+  preDestroy() {
+    if (this.groundShadow?.active) {
+      this.groundShadow.destroy();
+    }
+    this.groundShadow = null;
   }
 
   ensureAnimations(textureKey) {

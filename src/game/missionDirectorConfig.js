@@ -18,13 +18,15 @@ export const LEVEL_4_SPAWN_POINTS = [
 
 export const PHASE_DIRECTOR_CONFIGS = {
   1: {
+    // Level 1 is a short survival mission (~20s), so phase windows are compressed
+    // to stay within extraction start/duration timing.
     durationMs: 20000,
     extractionStartMs: 17000,
     phases: [
       {
         id: "L1-A",
         startMs: 0,
-        endMs: 30000,
+        endMs: 6000,
         spawnDelayMs: 1600,
         maxActive: 4,
         enemyWeights: { enemy: 0.8, "enemy-grenade": 0.2 },
@@ -34,8 +36,8 @@ export const PHASE_DIRECTOR_CONFIGS = {
       },
       {
         id: "L1-B",
-        startMs: 30000,
-        endMs: 75000,
+        startMs: 6000,
+        endMs: 12000,
         spawnDelayMs: 1200,
         maxActive: 6,
         enemyWeights: { enemy: 0.65, "enemy-grenade": 0.35 },
@@ -45,8 +47,8 @@ export const PHASE_DIRECTOR_CONFIGS = {
       },
       {
         id: "L1-C",
-        startMs: 75000,
-        endMs: 105000,
+        startMs: 12000,
+        endMs: 17000,
         spawnDelayMs: 900,
         maxActive: 7,
         enemyWeights: { enemy: 0.5, "enemy-grenade": 0.5 },
@@ -57,6 +59,7 @@ export const PHASE_DIRECTOR_CONFIGS = {
     ]
   },
   2: {
+    // Level 2 is kill-target based; no timer/extraction cutoff.
     durationMs: 0,
     extractionStartMs: 0,
     phases: [
@@ -107,13 +110,14 @@ export const PHASE_DIRECTOR_CONFIGS = {
     ]
   },
   3: {
+    // Level 3 is also short survival (~20s), matching mission timer/extraction.
     durationMs: 20000,
     extractionStartMs: 17000,
     phases: [
       {
         id: "L3-A",
         startMs: 0,
-        endMs: 50000,
+        endMs: 7000,
         spawnDelayMs: 900,
         maxActive: 8,
         enemyWeights: { enemy: 0.52, "enemy-grenade": 0.48 },
@@ -123,8 +127,8 @@ export const PHASE_DIRECTOR_CONFIGS = {
       },
       {
         id: "L3-B",
-        startMs: 50000,
-        endMs: 105000,
+        startMs: 7000,
+        endMs: 13000,
         spawnDelayMs: 760,
         maxActive: 9,
         enemyWeights: { enemy: 0.45, "enemy-grenade": 0.55 },
@@ -134,8 +138,8 @@ export const PHASE_DIRECTOR_CONFIGS = {
       },
       {
         id: "L3-C",
-        startMs: 105000,
-        endMs: 142000,
+        startMs: 13000,
+        endMs: 17000,
         spawnDelayMs: 650,
         maxActive: 10,
         enemyWeights: { enemy: 0.38, "enemy-grenade": 0.62 },
@@ -146,6 +150,7 @@ export const PHASE_DIRECTOR_CONFIGS = {
     ]
   },
   4: {
+    // Level 4 is kill-target + hostage-protection; no timer/extraction cutoff.
     durationMs: 0,
     extractionStartMs: 0,
     phases: [
