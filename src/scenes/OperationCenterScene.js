@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { PLAY_WIDTH } from "../game/config";
+import { MAX_MISSION_ID } from "../game/progressionConfig";
 import { UI_COLORS } from "../game/uiTokens";
 
 const UI_DISPLAY_FONT = "'Oxanium', 'Barlow Condensed', sans-serif";
@@ -395,7 +396,7 @@ export class OperationCenterScene extends Phaser.Scene {
       return 1;
     }
 
-    return Phaser.Math.Clamp(Math.floor(missionFromRegistry), 1, 3);
+    return Phaser.Math.Clamp(Math.floor(missionFromRegistry), 1, MAX_MISSION_ID);
   }
 
   getPlayerBudget() {
@@ -410,17 +411,25 @@ export class OperationCenterScene extends Phaser.Scene {
   getMissionBriefing(levelId) {
     if (levelId === 2) {
       return (
-        "Primary: Eliminate 40 hostiles.\n" +
+        "Primary: Eliminate 50 hostiles.\n" +
         "Threat: Fast wave rotations and grenadiers.\n" +
         "Directive: Keep pressure up and chain kills."
       );
     }
 
-    if (levelId >= 3) {
+    if (levelId === 3) {
       return (
         "Primary: Survive for 150 seconds.\n" +
         "Threat: High-tempo enemy fire and grenades.\n" +
         "Directive: Stay mobile and protect your health."
+      );
+    }
+
+    if (levelId >= 4) {
+      return (
+        "Primary: Release the hostage by eliminating 40 terrorists.\n" +
+        "Threat: Tunnel crossfire and hostage proximity.\n" +
+        "Directive: Keep fire disciplined and avoid the hostage kill zone."
       );
     }
 

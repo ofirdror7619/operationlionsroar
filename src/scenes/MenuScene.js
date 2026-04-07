@@ -1,11 +1,14 @@
 import Phaser from "phaser";
 import { HUD_PANEL_WIDTH, PLAY_WIDTH } from "../game/config";
+import { START_MISSION_ID, START_PLAYER_BUDGET } from "../game/progressionConfig";
+import { GRENADE_RADIUS_UPGRADE_REGISTRY_KEY, WEAPON_MAG_UPGRADE_REGISTRY_KEYS } from "../game/upgradeConfig";
 import { UI_COLORS } from "../game/uiTokens";
 
 const MUSIC_LOOP_START_SECONDS = 15;
 const MUSIC_LOOP_MARKER = "main-loop";
 const UI_DISPLAY_FONT = "'Oxanium', 'Barlow Condensed', sans-serif";
 const UI_BODY_FONT = "'Share Tech Mono', 'Chakra Petch', monospace";
+const TEST_GRANT_STARTER_WEAPON = false;
 export class MenuScene extends Phaser.Scene {
   constructor() {
     super("menu");
@@ -231,12 +234,18 @@ export class MenuScene extends Phaser.Scene {
     this.startBlinkTween = null;
     this.typingEvent?.remove(false);
     this.typingEvent = null;
-    this.registry.set("playerBudget", 1300);
+    this.registry.set("playerBudget", START_PLAYER_BUDGET);
     this.registry.set("playerGrenades", 0);
-    this.registry.set("hasM203", false);
+    this.registry.set("hasM203", TEST_GRANT_STARTER_WEAPON);
     this.registry.set("hasMag58", false);
     this.registry.set("hasTar21", false);
-    this.registry.set("currentMissionId", 1);
+    this.registry.set("hasCeramicVest", false);
+    this.registry.set("hasGrenadeKit", false);
+    this.registry.set(WEAPON_MAG_UPGRADE_REGISTRY_KEYS.m203, 0);
+    this.registry.set(WEAPON_MAG_UPGRADE_REGISTRY_KEYS.tavor, 0);
+    this.registry.set(WEAPON_MAG_UPGRADE_REGISTRY_KEYS.mag, 0);
+    this.registry.set(GRENADE_RADIUS_UPGRADE_REGISTRY_KEY, 0);
+    this.registry.set("currentMissionId", START_MISSION_ID);
     this.registry.remove("operationCenterNotice");
     this.scene.start("operation-center");
   }

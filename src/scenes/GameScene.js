@@ -2,7 +2,10 @@ import Phaser from "phaser";
 import { EnemySpawner } from "../systems/EnemySpawner";
 import { GameState } from "../systems/GameState";
 import { PLAY_WIDTH } from "../game/config";
+import { MAX_MISSION_ID, MISSION_REWARD_BY_LEVEL } from "../game/progressionConfig";
+import { getGrenadeBlastRadius, getWeaponMaxAmmoCapacity } from "../game/upgradeConfig";
 import { UI_LAYOUT, UI_MOTION } from "../game/uiTokens";
+import { DEFAULT_SPAWN_POINTS } from "../game/enemySpawnerConfig";
 
 const MUSIC_LOOP_START_SECONDS = 15;
 const MUSIC_LOOP_MARKER = "main-loop";
@@ -18,23 +21,20 @@ const GRENADE_PICKUP_DROP_CHANCE = 0.03;
 const GRENADE_PICKUP_REWARD = 1;
 const GRENADE_PICKUP_MAX_ACTIVE = 1;
 const GRENADE_PICKUP_LIFETIME_MS = 8000;
-const HEART_PICKUP_DROP_CHANCE = 0.007;
-const HEART_PICKUP_REWARD = 1;
-const HEART_PICKUP_MAX_ACTIVE = 1;
-const HEART_PICKUP_LIFETIME_MS = 9000;
 const MAG_WEAPON_PICKUP_DROP_CHANCE = 0.015;
 const MAG_WEAPON_PICKUP_MAX_ACTIVE = 1;
 const MAG_WEAPON_PICKUP_LIFETIME_MS = 9000;
-const MAG_MODE_DURATION_MS = 20000;
-const LEVEL_1_SURVIVAL_DURATION_MS = 110000;
-const LEVEL_3_SURVIVAL_DURATION_MS = 150000;
-const LEVEL_2_KILL_TARGET = 40;
+const DEFAULT_MAG_MODE_DURATION_MS = 20000;
+const LEVEL_2_MAG_MODE_DURATION_MS = 18000;
+const LEVEL_2_KILL_TARGET = 50;
+const LEVEL_4_KILL_TARGET = 40;
 const BASE_FIRE_COOLDOWN_MS = 150;
 const MAG_FIRE_COOLDOWN_MS = 70;
 const MAG_AIM_ASSIST_RADIUS = 44;
 const TAVOR_AIM_ASSIST_RADIUS = 50;
 const ENEMY_FIRE_DAMAGE = 12;
 const GRENADE_ENEMY_FIRE_DAMAGE = 18;
+const CERAMIC_VEST_DAMAGE_MULTIPLIER = 0.5;
 const BASE_ENEMY_AIM_DURATION_MS = 3000;
 const LEVEL_3_ENEMY_AIM_DURATION_MS = 1000;
 const WEAPON_SOURCE_FRAME_WIDTH = 384;
@@ -66,6 +66,188 @@ const KILL_FEED_MAX_ITEMS = 4;
 const RETRY_BUTTON_BASE_TINT = 0xff788a;
 const RETRY_BUTTON_HOVER_TINT = 0xff96a7;
 const RETRY_BUTTON_GLOW_TINT = 0xff4d66;
+const LEVEL_4_HOSTAGE_ZONE = {
+  x1: 0.463,
+  x2: 0.55,
+  y1: 0.397,
+  y2: 0.625
+};
+const LEVEL_4_SPAWN_POINTS = [
+  { id: "A", x: 0.12, y: 0.528, side: "left", height: 0.43, lowerBodyHideRatio: 0, bottomTrimRatio: 0, enemyType: "cleanShooter" },
+  { id: "D", x: 0.365, y: 0.537, side: "left", height: 0.4, lowerBodyHideRatio: 0.42, bottomTrimRatio: 0, enemyType: "cleanShooter" },
+  { id: "E", x: 0.409, y: 0.488, side: "left", height: 0.37, lowerBodyHideRatio: 0.3, bottomTrimRatio: 0, enemyType: "cleanShooter" },
+  { id: "C", x: 0.632, y: 0.528, side: "right", height: 0.41, lowerBodyHideRatio: 0, bottomTrimRatio: 0, enemyType: "cleanShooter" },
+  { id: "B", x: 0.902, y: 0.66, side: "right", height: 0.52, lowerBodyHideRatio: 0, bottomTrimRatio: 0, enemyType: "cleanShooter" }
+];
+const PHASE_DIRECTOR_CONFIGS = {
+  1: {
+    durationMs: 110000,
+    extractionStartMs: 105000,
+    phases: [
+      {
+        id: "L1-A",
+        startMs: 0,
+        endMs: 30000,
+        spawnDelayMs: 1600,
+        maxActive: 4,
+        enemyWeights: { enemy: 0.8, "enemy-grenade": 0.2 },
+        magazineDropChance: 0.12,
+        medikitDropChance: 0.08,
+        grenadePickupDropChance: 0.03
+      },
+      {
+        id: "L1-B",
+        startMs: 30000,
+        endMs: 75000,
+        spawnDelayMs: 1200,
+        maxActive: 6,
+        enemyWeights: { enemy: 0.65, "enemy-grenade": 0.35 },
+        magazineDropChance: 0.09,
+        medikitDropChance: 0.06,
+        grenadePickupDropChance: 0.025
+      },
+      {
+        id: "L1-C",
+        startMs: 75000,
+        endMs: 105000,
+        spawnDelayMs: 900,
+        maxActive: 7,
+        enemyWeights: { enemy: 0.5, "enemy-grenade": 0.5 },
+        magazineDropChance: 0.07,
+        medikitDropChance: 0.04,
+        grenadePickupDropChance: 0.02
+      }
+    ]
+  },
+  2: {
+    durationMs: 0,
+    extractionStartMs: 0,
+    phases: [
+      {
+        id: "L2-A",
+        startMs: 0,
+        endMs: 35000,
+        spawnDelayMs: 1100,
+        maxActive: 7,
+        enemyWeights: { enemy: 0.62, "enemy-grenade": 0.38 },
+        magazineDropChance: 0.08,
+        medikitDropChance: 0.05,
+        grenadePickupDropChance: 0.022
+      },
+      {
+        id: "L2-B",
+        startMs: 35000,
+        endMs: 80000,
+        spawnDelayMs: 920,
+        maxActive: 8,
+        enemyWeights: { enemy: 0.54, "enemy-grenade": 0.46 },
+        magazineDropChance: 0.07,
+        medikitDropChance: 0.04,
+        grenadePickupDropChance: 0.02
+      },
+      {
+        id: "L2-C",
+        startMs: 80000,
+        endMs: 120000,
+        spawnDelayMs: 780,
+        maxActive: 9,
+        enemyWeights: { enemy: 0.5, "enemy-grenade": 0.5 },
+        magazineDropChance: 0.06,
+        medikitDropChance: 0.03,
+        grenadePickupDropChance: 0.018
+      },
+      {
+        id: "L2-D",
+        startMs: 120000,
+        endMs: Number.POSITIVE_INFINITY,
+        spawnDelayMs: 680,
+        maxActive: 10,
+        enemyWeights: { enemy: 0.44, "enemy-grenade": 0.56 },
+        magazineDropChance: 0.05,
+        medikitDropChance: 0.025,
+        grenadePickupDropChance: 0.015
+      }
+    ]
+  },
+  3: {
+    durationMs: 150000,
+    extractionStartMs: 142000,
+    phases: [
+      {
+        id: "L3-A",
+        startMs: 0,
+        endMs: 50000,
+        spawnDelayMs: 900,
+        maxActive: 8,
+        enemyWeights: { enemy: 0.52, "enemy-grenade": 0.48 },
+        magazineDropChance: 0.06,
+        medikitDropChance: 0.035,
+        grenadePickupDropChance: 0.018
+      },
+      {
+        id: "L3-B",
+        startMs: 50000,
+        endMs: 105000,
+        spawnDelayMs: 760,
+        maxActive: 9,
+        enemyWeights: { enemy: 0.45, "enemy-grenade": 0.55 },
+        magazineDropChance: 0.05,
+        medikitDropChance: 0.03,
+        grenadePickupDropChance: 0.015
+      },
+      {
+        id: "L3-C",
+        startMs: 105000,
+        endMs: 142000,
+        spawnDelayMs: 650,
+        maxActive: 10,
+        enemyWeights: { enemy: 0.38, "enemy-grenade": 0.62 },
+        magazineDropChance: 0.045,
+        medikitDropChance: 0.022,
+        grenadePickupDropChance: 0.012
+      }
+    ]
+  },
+  4: {
+    durationMs: 0,
+    extractionStartMs: 0,
+    phases: [
+      {
+        id: "L4-A",
+        startMs: 0,
+        endMs: 42000,
+        spawnDelayMs: 1250,
+        maxActive: 4,
+        enemyWeights: { enemy: 0.78, "enemy-grenade": 0.22 },
+        magazineDropChance: 0.09,
+        medikitDropChance: 0.065,
+        grenadePickupDropChance: 0.026
+      },
+      {
+        id: "L4-B",
+        startMs: 42000,
+        endMs: 90000,
+        spawnDelayMs: 980,
+        maxActive: 5,
+        enemyWeights: { enemy: 0.66, "enemy-grenade": 0.34 },
+        magazineDropChance: 0.075,
+        medikitDropChance: 0.05,
+        grenadePickupDropChance: 0.021
+      },
+      {
+        id: "L4-C",
+        startMs: 90000,
+        endMs: 122000,
+        spawnDelayMs: 840,
+        maxActive: 6,
+        enemyWeights: { enemy: 0.58, "enemy-grenade": 0.42 },
+        magazineDropChance: 0.06,
+        medikitDropChance: 0.038,
+        grenadePickupDropChance: 0.017
+      }
+    ]
+  }
+};
 
 export class GameScene extends Phaser.Scene {
   constructor() {
@@ -76,7 +258,6 @@ export class GameScene extends Phaser.Scene {
     this.magazinePickups = null;
     this.medikitPickups = null;
     this.grenadePickups = null;
-    this.heartPickups = null;
     this.magWeaponPickups = null;
     this.spawner = null;
     this.damageOverlay = null;
@@ -177,7 +358,12 @@ export class GameScene extends Phaser.Scene {
     this.weaponRecoilX = 0;
     this.weaponRecoilY = 0;
     this.weaponRecoilAngle = 0;
+    this.weaponAmmoById = {};
     this.hasContinuedAfterMissionComplete = false;
+    this.levelStartedAt = 0;
+    this.currentDirectorPhaseId = "";
+    this.isExtractionWindowActive = false;
+    this.hostageZoneRect = null;
   }
 
   init(data = {}) {
@@ -188,6 +374,7 @@ export class GameScene extends Phaser.Scene {
     this.startBackgroundMusic();
 
     this.state = new GameState();
+    this.weaponAmmoById = this.createWeaponAmmoState();
     this.gameOver = false;
     this.levelComplete = false;
     this.hasContinuedAfterMissionComplete = false;
@@ -195,17 +382,21 @@ export class GameScene extends Phaser.Scene {
     this.magModeEndsAt = 0;
     this.hasSpawnedMagWeaponPickup = false;
     this.lastShotAtMs = -99999;
+    this.levelStartedAt = this.time.now;
+    this.currentDirectorPhaseId = "";
+    this.isExtractionWindowActive = false;
+    this.hostageZoneRect = this.createHostageZoneRect();
     this.enemies = this.physics.add.group();
     this.magazinePickups = this.add.group();
     this.medikitPickups = this.add.group();
     this.grenadePickups = this.add.group();
-    this.heartPickups = this.add.group();
     this.magWeaponPickups = this.add.group();
 
     this.backgroundImage = this.add
-      .image(this.playWidth / 2, this.scale.height / 2, "bg")
+      .image(this.playWidth / 2, this.scale.height / 2, this.getMissionBackgroundKey())
       .setDisplaySize(this.playWidth, this.scale.height);
     this.createWeaponView();
+    this.applyCurrentWeaponAmmoState();
     this.createCrosshair();
     this.createBottomResourceCounters();
     this.createLifeBar();
@@ -239,15 +430,23 @@ export class GameScene extends Phaser.Scene {
       volume: 0.55
     });
 
+    const initialPhaseConfig = this.getCurrentPhaseConfig();
     this.spawner = new EnemySpawner(this, this.enemies, {
+      spawnDelayMs: initialPhaseConfig?.spawnDelayMs ?? 1200,
+      maxActive: initialPhaseConfig?.maxActive ?? 6,
+      enemyTextureWeights: initialPhaseConfig?.enemyWeights,
+      spawnsEnabled: true,
+      spawnPoints: this.getSpawnPointsForCurrentLevel(),
       enemyOptions: {
-        aimDurationMs: this.levelId >= 3 ? LEVEL_3_ENEMY_AIM_DURATION_MS : BASE_ENEMY_AIM_DURATION_MS,
+        aimDurationMs: this.levelId === 3 ? LEVEL_3_ENEMY_AIM_DURATION_MS : BASE_ENEMY_AIM_DURATION_MS,
         onPlayerHit: (enemy) => {
           this.playEnemyFireSound(enemy);
           this.showEnemyMuzzleFlash(enemy);
           this.flashPlayerHit();
           const isGrenadeEnemy = enemy?.enemyTypeKey === "enemy-grenade";
-          this.state.applyDamage(isGrenadeEnemy ? GRENADE_ENEMY_FIRE_DAMAGE : ENEMY_FIRE_DAMAGE);
+          const rawDamage = isGrenadeEnemy ? GRENADE_ENEMY_FIRE_DAMAGE : ENEMY_FIRE_DAMAGE;
+          const appliedDamage = this.getIncomingDamageAfterArmor(rawDamage);
+          this.state.applyDamage(appliedDamage);
           this.cameras.main.shake(120, 0.003);
 
           if (this.state.hp <= 0) {
@@ -260,6 +459,7 @@ export class GameScene extends Phaser.Scene {
       }
     });
     this.spawner.start();
+    this.updatePhaseDirector(true);
 
     this.input.setDefaultCursor("none");
     this.input.mouse?.disableContextMenu();
@@ -417,7 +617,7 @@ export class GameScene extends Phaser.Scene {
       }
     });
     this.retryButton.on("pointerup", () => {
-      if (this.retryButton?.visible && this.gameOver) {
+      if (this.retryButton?.visible && (this.gameOver || this.levelComplete)) {
         this.retryButtonHoverTween?.stop();
         this.tweens.add({
           targets: [this.retryButton, this.retryButtonLabel].filter(Boolean),
@@ -428,7 +628,7 @@ export class GameScene extends Phaser.Scene {
           ease: UI_MOTION.easeTap
         });
         this.time.delayedCall(80, () => {
-          if (this.gameOver) {
+          if (this.gameOver || this.levelComplete) {
             this.restart();
           }
         });
@@ -444,6 +644,8 @@ export class GameScene extends Phaser.Scene {
     if (this.gameOver || this.levelComplete || this.isAbortConfirmVisible()) {
       return;
     }
+
+    this.updatePhaseDirector();
 
     this.enemies.children.each((enemy) => {
       if (!enemy.active) {
@@ -490,6 +692,10 @@ export class GameScene extends Phaser.Scene {
     this.playFireSound();
     this.playWeaponActionAnimation("fire");
 
+    if (this.tryTriggerHostageFailFromShot(pointer.worldX, pointer.worldY)) {
+      return;
+    }
+
     const aimAssistRadius = this.getAimAssistRadius();
     const didHitEnemy = this.tryKillEnemyAt(pointer.worldX, pointer.worldY, aimAssistRadius > 0, aimAssistRadius);
     let didHit = didHitEnemy;
@@ -502,9 +708,6 @@ export class GameScene extends Phaser.Scene {
     }
     if (!didHit) {
       didHit = this.tryCollectGrenadePickup(pointer.worldX, pointer.worldY);
-    }
-    if (!didHit) {
-      didHit = this.tryCollectHeartPickup(pointer.worldX, pointer.worldY);
     }
     if (!didHit) {
       didHit = this.tryCollectMagWeaponPickup(pointer.worldX, pointer.worldY);
@@ -578,7 +781,11 @@ export class GameScene extends Phaser.Scene {
     this.playGrenadeSound();
     this.playWeaponActionAnimation("grenade");
 
-    const radius = 170;
+    const radius = this.getCurrentGrenadeBlastRadius();
+    if (this.tryTriggerHostageFailFromGrenade(pointer.worldX, pointer.worldY, radius)) {
+      return;
+    }
+
     const blast = this.add
       .image(pointer.worldX, pointer.worldY, "grenade-blast")
       .setScale(0.08)
@@ -633,12 +840,11 @@ export class GameScene extends Phaser.Scene {
     this.trySpawnMagazineDrop(deathX, deathY);
     this.trySpawnMedikitDrop(deathX, deathY);
     this.trySpawnGrenadePickupDrop(deathX, deathY);
-    this.trySpawnHeartPickupDrop(deathX, deathY);
     this.trySpawnMagWeaponPickupDrop(deathX, deathY);
 
     if (this.isKillObjectiveLevel()) {
       this.updateObjectiveText();
-      if (!this.levelComplete && this.killCount >= LEVEL_2_KILL_TARGET) {
+      if (!this.levelComplete && this.killCount >= this.getKillObjectiveTarget()) {
         this.showObjectiveCompleteFlash();
         this.setLevelComplete();
       }
@@ -660,7 +866,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    if (Phaser.Math.FloatBetween(0, 1) > MAGAZINE_DROP_CHANCE) {
+    if (Phaser.Math.FloatBetween(0, 1) > this.getPhaseDropChance("magazineDropChance", MAGAZINE_DROP_CHANCE)) {
       return;
     }
 
@@ -703,6 +909,7 @@ export class GameScene extends Phaser.Scene {
         didCollect = true;
         pickup.destroy();
         this.state.addAmmo(MAGAZINE_AMMO_REWARD);
+        this.syncSelectedWeaponAmmoState();
         this.emitHudUpdate();
         this.showAmmoPickupText(worldX, worldY);
       }
@@ -720,7 +927,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    if (Phaser.Math.FloatBetween(0, 1) > MEDIKIT_DROP_CHANCE) {
+    if (Phaser.Math.FloatBetween(0, 1) > this.getPhaseDropChance("medikitDropChance", MEDIKIT_DROP_CHANCE)) {
       return;
     }
 
@@ -780,7 +987,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    if (Phaser.Math.FloatBetween(0, 1) > GRENADE_PICKUP_DROP_CHANCE) {
+    if (Phaser.Math.FloatBetween(0, 1) > this.getPhaseDropChance("grenadePickupDropChance", GRENADE_PICKUP_DROP_CHANCE)) {
       return;
     }
 
@@ -826,66 +1033,6 @@ export class GameScene extends Phaser.Scene {
         this.syncGrenadesToRegistry();
         this.emitHudUpdate();
         this.showGrenadePickupText(worldX, worldY);
-      }
-    });
-
-    return didCollect;
-  }
-
-  trySpawnHeartPickupDrop(originX, originY) {
-    if (!this.heartPickups) {
-      return;
-    }
-
-    if (this.heartPickups.countActive(true) >= HEART_PICKUP_MAX_ACTIVE) {
-      return;
-    }
-
-    if (Phaser.Math.FloatBetween(0, 1) > HEART_PICKUP_DROP_CHANCE) {
-      return;
-    }
-
-    const x = Phaser.Math.Clamp(originX + Phaser.Math.Between(-72, 72), 24, this.playWidth - 24);
-    const y = Phaser.Math.Clamp(originY + Phaser.Math.Between(-48, 48), 28, this.scale.height - 28);
-    const pickup = this.add.image(x, y, "heart-pickup").setDepth(74);
-
-    const targetWidth = 52;
-    pickup.setScale(targetWidth / pickup.width);
-    this.heartPickups.add(pickup);
-
-    this.tweens.add({
-      targets: pickup,
-      y: pickup.y - 5,
-      duration: 460,
-      yoyo: true,
-      repeat: -1,
-      ease: "Sine.InOut"
-    });
-
-    this.time.delayedCall(HEART_PICKUP_LIFETIME_MS, () => {
-      if (pickup.active) {
-        pickup.destroy();
-      }
-    });
-  }
-
-  tryCollectHeartPickup(worldX, worldY) {
-    if (!this.heartPickups) {
-      return false;
-    }
-
-    let didCollect = false;
-    this.heartPickups.children.each((pickup) => {
-      if (didCollect || !pickup?.active) {
-        return;
-      }
-
-      if (pickup.getBounds().contains(worldX, worldY)) {
-        didCollect = true;
-        pickup.destroy();
-        this.state.addLife(HEART_PICKUP_REWARD);
-        this.emitHudUpdate();
-        this.showLifePickupText(worldX, worldY);
       }
     });
 
@@ -1017,25 +1164,6 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  showLifePickupText(x, y) {
-    const text = this.add.text(x, y - 16, `+${HEART_PICKUP_REWARD} LIFE`, {
-      fontFamily: UI_DISPLAY_FONT,
-      fontSize: "28px",
-      color: "#ff93a8",
-      stroke: "#31111a",
-      strokeThickness: 5,
-      letterSpacing: 2
-    }).setOrigin(0.5).setDepth(90);
-
-    this.tweens.add({
-      targets: text,
-      y: y - 44,
-      alpha: 0,
-      duration: 520,
-      onComplete: () => text.destroy()
-    });
-  }
-
   showMagWeaponPickupText(x, y) {
     const text = this.add.text(x, y - 16, "FN-MAG-58 ONLINE", {
       fontFamily: UI_DISPLAY_FONT,
@@ -1079,6 +1207,11 @@ export class GameScene extends Phaser.Scene {
     });
     this.input.setDefaultCursor("auto");
     this.stopMagFireSound();
+    if (this.isHostageProtectionLevel()) {
+      this.backgroundImage?.setTexture("bg-level4-failed");
+      this.showHostageEndStateUi("MISSION FAILED");
+      return;
+    }
     this.triggerMissionFailedCinematic?.();
   }
 
@@ -1089,8 +1222,26 @@ export class GameScene extends Phaser.Scene {
 
     this.levelComplete = true;
     this.spawner.stop();
+    const activeEnemies = this.enemies.getChildren().filter((enemy) => enemy?.active);
+    activeEnemies.forEach((enemy) => {
+      if (!enemy?.active) {
+        return;
+      }
+
+      this.stopEnemyFireSound(enemy);
+      enemy.forceIdle?.();
+      enemy.destroy();
+    });
     this.input.setDefaultCursor("auto");
     this.stopMagFireSound();
+    if (this.isHostageProtectionLevel()) {
+      this.backgroundImage?.setTexture("bg-level4-success");
+      this.showHostageEndStateUi("MISSION SUCCESS", {
+        showRetry: false,
+        showContinueHint: true
+      });
+      return;
+    }
     this.hideMissionFailScreen?.();
     this.updateReloadWarning(1);
     this.comboText?.setVisible(false);
@@ -1107,11 +1258,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   checkLevelEnd() {
-    if (this.isKillObjectiveLevel()) {
+    if (this.levelEndsAt <= 0) {
       return;
     }
 
-    if (this.levelEndsAt > 0 && this.time.now >= this.levelEndsAt) {
+    if (this.time.now >= this.levelEndsAt) {
       this.setLevelComplete();
     }
   }
@@ -1130,7 +1281,7 @@ export class GameScene extends Phaser.Scene {
     const currentBudget = this.getStoredBudget();
     const missionCompletionReward = this.getMissionCompletionReward();
     this.registry.set("playerBudget", currentBudget + missionCompletionReward);
-    const nextMissionId = Phaser.Math.Clamp(this.levelId + 1, 1, 3);
+    const nextMissionId = Phaser.Math.Clamp(this.levelId + 1, 1, MAX_MISSION_ID);
     this.registry.set("currentMissionId", nextMissionId);
     this.registry.set("operationCenterNotice", `MISSION COMPLETE +$${missionCompletionReward}`);
     this.hideMissionFailScreen?.();
@@ -1139,7 +1290,7 @@ export class GameScene extends Phaser.Scene {
 
   getMissionCompletionReward() {
     const completedLevel = Math.max(1, Math.floor(this.levelId || 1));
-    return completedLevel * 1000;
+    return MISSION_REWARD_BY_LEVEL[completedLevel] ?? 1000;
   }
 
   getStoredGrenadeCount() {
@@ -1164,33 +1315,290 @@ export class GameScene extends Phaser.Scene {
     return Math.max(0, Math.floor(budgetFromRegistry));
   }
 
+  hasCeramicVest() {
+    return Boolean(this.registry.get("hasCeramicVest"));
+  }
+
+  getIncomingDamageAfterArmor(baseDamage) {
+    if (!this.hasCeramicVest()) {
+      return baseDamage;
+    }
+
+    return Math.max(1, Math.floor(baseDamage * CERAMIC_VEST_DAMAGE_MULTIPLIER));
+  }
+
+  getCurrentGrenadeBlastRadius() {
+    return getGrenadeBlastRadius(this.registry);
+  }
+
+  isHostageProtectionLevel() {
+    return this.levelId === 4;
+  }
+
+  getMissionBackgroundKey() {
+    return this.isHostageProtectionLevel() ? "bg-level4" : "bg";
+  }
+
+  getSpawnPointsForCurrentLevel() {
+    if (this.isHostageProtectionLevel()) {
+      return LEVEL_4_SPAWN_POINTS;
+    }
+
+    return DEFAULT_SPAWN_POINTS;
+  }
+
+  createHostageZoneRect() {
+    if (!this.isHostageProtectionLevel()) {
+      return null;
+    }
+
+    const left = this.playWidth * LEVEL_4_HOSTAGE_ZONE.x1;
+    const top = this.scale.height * LEVEL_4_HOSTAGE_ZONE.y1;
+    const width = this.playWidth * (LEVEL_4_HOSTAGE_ZONE.x2 - LEVEL_4_HOSTAGE_ZONE.x1);
+    const height = this.scale.height * (LEVEL_4_HOSTAGE_ZONE.y2 - LEVEL_4_HOSTAGE_ZONE.y1);
+    return new Phaser.Geom.Rectangle(left, top, width, height);
+  }
+
+  getHostageEndStateLayout() {
+    const zone = this.hostageZoneRect;
+    if (!zone) {
+      return {
+        centerX: this.playWidth * 0.5,
+        statusY: this.scale.height * 0.38,
+        retryY: this.scale.height * 0.66
+      };
+    }
+
+    return {
+      centerX: zone.centerX,
+      statusY: Phaser.Math.Clamp(zone.top - 64, 84, this.scale.height - 180),
+      retryY: Phaser.Math.Clamp(zone.bottom + 78, 120, this.scale.height - 72)
+    };
+  }
+
+  showHostageEndStateUi(statusText, options = {}) {
+    const { showRetry = true, showContinueHint = false } = options;
+    this.hideMissionFailScreen?.();
+    const { centerX, statusY, retryY } = this.getHostageEndStateLayout();
+    this.stopRetryButtonPulse();
+    this.tweens.killTweensOf([this.retryButton, this.retryButtonLabel, this.retryButtonGlow, this.gameStatusText]);
+
+    this.failOverlay?.setVisible(false).setAlpha(0);
+    this.failBlurLayers.forEach((layer) => layer.setVisible(false).setAlpha(0));
+    this.failGlitchGhostLeft?.setVisible(false).setAlpha(0);
+    this.failGlitchGhostRight?.setVisible(false).setAlpha(0);
+
+    if (this.gameStatusText?.active) {
+      this.gameStatusText
+        .setPosition(centerX, statusY)
+        .setFontSize("64px")
+        .setText(statusText)
+        .setVisible(true)
+        .setAlpha(1)
+        .setScale(1);
+      this.gameStatusText.setShadow(0, 0, statusText === "MISSION SUCCESS" ? "#65fff5" : "#ff2937", 26, true, true);
+    }
+
+    if (showRetry) {
+      this.retryButton
+        ?.setPosition(centerX, retryY)
+        .setVisible(true)
+        .setScale(1)
+        .setAlpha(0.98)
+        .setTint(RETRY_BUTTON_BASE_TINT);
+      this.retryButtonGlow
+        ?.setPosition(centerX, retryY)
+        .setVisible(true)
+        .setScale(1)
+        .setAlpha(0.34)
+        .setTint(RETRY_BUTTON_GLOW_TINT);
+      this.retryButtonLabel
+        ?.setPosition(centerX, retryY)
+        .setText("RETRY")
+        .setVisible(true)
+        .setScale(1)
+        .setAlpha(1);
+
+      this.tweens.add({
+        targets: this.retryButtonGlow,
+        alpha: 0.42,
+        duration: UI_MOTION.glowPulseMs,
+        yoyo: true,
+        repeat: -1,
+        ease: UI_MOTION.easePulse
+      });
+      this.startRetryButtonPulse();
+      return;
+    }
+
+    this.retryButton?.setVisible(false);
+    this.retryButtonGlow?.setVisible(false).setAlpha(0);
+    this.retryButtonLabel
+      ?.setPosition(centerX, retryY)
+      .setText(showContinueHint ? "CLICK TO CONTINUE" : "")
+      .setVisible(showContinueHint)
+      .setScale(1)
+      .setAlpha(1);
+  }
+
+  isPointInHostageZone(worldX, worldY) {
+    if (!this.hostageZoneRect) {
+      return false;
+    }
+
+    return Phaser.Geom.Rectangle.Contains(this.hostageZoneRect, worldX, worldY);
+  }
+
+  doesCircleIntersectHostageZone(worldX, worldY, radius) {
+    if (!this.hostageZoneRect) {
+      return false;
+    }
+
+    const closestX = Phaser.Math.Clamp(worldX, this.hostageZoneRect.left, this.hostageZoneRect.right);
+    const closestY = Phaser.Math.Clamp(worldY, this.hostageZoneRect.top, this.hostageZoneRect.bottom);
+    const dx = worldX - closestX;
+    const dy = worldY - closestY;
+    return dx * dx + dy * dy <= radius * radius;
+  }
+
+  failMissionFromHostageHit() {
+    if (!this.isHostageProtectionLevel() || this.gameOver || this.levelComplete) {
+      return false;
+    }
+
+    this.setGameOver();
+    return true;
+  }
+
+  tryTriggerHostageFailFromShot(worldX, worldY) {
+    if (!this.isHostageProtectionLevel()) {
+      return false;
+    }
+
+    if (!this.isPointInHostageZone(worldX, worldY)) {
+      return false;
+    }
+
+    return this.failMissionFromHostageHit();
+  }
+
+  tryTriggerHostageFailFromGrenade(worldX, worldY, radius) {
+    if (!this.isHostageProtectionLevel()) {
+      return false;
+    }
+
+    if (!this.doesCircleIntersectHostageZone(worldX, worldY, radius)) {
+      return false;
+    }
+
+    return this.failMissionFromHostageHit();
+  }
+
+  getLevelDirectorConfig() {
+    return PHASE_DIRECTOR_CONFIGS[this.levelId] ?? PHASE_DIRECTOR_CONFIGS[1];
+  }
+
+  getElapsedLevelMs() {
+    return Math.max(0, this.time.now - this.levelStartedAt);
+  }
+
+  getCurrentPhaseConfig() {
+    const config = this.getLevelDirectorConfig();
+    const phases = Array.isArray(config?.phases) ? config.phases : [];
+    if (phases.length <= 0) {
+      return null;
+    }
+
+    const elapsedMs = this.getElapsedLevelMs();
+    const activePhase = phases.find((phase) => elapsedMs >= phase.startMs && elapsedMs < phase.endMs);
+    return activePhase ?? phases[phases.length - 1];
+  }
+
+  updatePhaseDirector(force = false) {
+    if (!this.spawner) {
+      return;
+    }
+
+    const phase = this.getCurrentPhaseConfig();
+    if (phase && (force || this.currentDirectorPhaseId !== phase.id)) {
+      this.currentDirectorPhaseId = phase.id;
+      this.spawner.applyDirectorConfig({
+        spawnDelayMs: phase.spawnDelayMs,
+        maxActive: phase.maxActive,
+        enemyWeights: phase.enemyWeights
+      });
+    }
+
+    const shouldEnableSpawns = !this.isExtractionPhaseActive();
+    if (force || shouldEnableSpawns !== !this.isExtractionWindowActive) {
+      this.spawner.setSpawnsEnabled(shouldEnableSpawns);
+      this.isExtractionWindowActive = !shouldEnableSpawns;
+    }
+  }
+
+  getPhaseDropChance(fieldName, fallbackChance) {
+    const phase = this.getCurrentPhaseConfig();
+    const configuredChance = Number(phase?.[fieldName]);
+    if (!Number.isFinite(configuredChance)) {
+      return fallbackChance;
+    }
+
+    return Phaser.Math.Clamp(configuredChance, 0, 1);
+  }
+
+  getLevelExtractionStartMs() {
+    const extractionStartMs = Number(this.getLevelDirectorConfig()?.extractionStartMs ?? 0);
+    return extractionStartMs > 0 ? extractionStartMs : 0;
+  }
+
+  isExtractionPhaseActive() {
+    const extractionStartMs = this.getLevelExtractionStartMs();
+    if (extractionStartMs <= 0 || this.levelEndsAt <= 0) {
+      return false;
+    }
+
+    return this.getElapsedLevelMs() >= extractionStartMs && this.time.now < this.levelEndsAt;
+  }
+
   getLevelObjectiveText() {
     if (this.isKillObjectiveLevel()) {
-      const displayedKills = Math.min(this.killCount, LEVEL_2_KILL_TARGET);
-      return `OBJECTIVE: KILL ${LEVEL_2_KILL_TARGET} ENEMIES (${displayedKills}/${LEVEL_2_KILL_TARGET})`;
+      const targetKills = this.getKillObjectiveTarget();
+      const displayedKills = Math.min(this.killCount, targetKills);
+      if (this.levelId === 4) {
+        return `OBJECTIVE: RELEASE HOSTAGE (${displayedKills}/${targetKills})`;
+      }
+
+      return `OBJECTIVE: KILL ${targetKills} ENEMIES (${displayedKills}/${targetKills})`;
     }
 
     const fallbackSeconds = Math.floor(this.getLevelDurationMs() / 1000);
     const secondsToSurvive = this.levelEndsAt > 0
       ? Math.max(0, Math.ceil((this.levelEndsAt - this.time.now) / 1000))
       : fallbackSeconds;
+    if (this.isHostageProtectionLevel() && !this.isExtractionPhaseActive()) {
+      return `OBJECTIVE: PROTECT HOSTAGE (${secondsToSurvive}s)`;
+    }
+    if (this.isExtractionPhaseActive()) {
+      return `OBJECTIVE: HOLD EXTRACTION (${secondsToSurvive}s)`;
+    }
     return `OBJECTIVE: SURVIVE FOR ${secondsToSurvive} SECONDS`;
   }
 
   isKillObjectiveLevel() {
-    return this.levelId === 2;
+    return this.levelId === 2 || this.levelId === 4;
+  }
+
+  getKillObjectiveTarget() {
+    if (this.levelId === 4) {
+      return LEVEL_4_KILL_TARGET;
+    }
+
+    return LEVEL_2_KILL_TARGET;
   }
 
   getLevelDurationMs() {
-    if (this.levelId >= 3) {
-      return LEVEL_3_SURVIVAL_DURATION_MS;
-    }
-
-    if (this.levelId <= 1) {
-      return LEVEL_1_SURVIVAL_DURATION_MS;
-    }
-
-    return 0;
+    const configuredDuration = Number(this.getLevelDirectorConfig()?.durationMs ?? 0);
+    return configuredDuration > 0 ? configuredDuration : 0;
   }
 
   updateObjectiveText() {
@@ -1348,7 +1756,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   activateMagMode() {
-    this.magModeEndsAt = this.time.now + MAG_MODE_DURATION_MS;
+    const magDurationMs = this.levelId === 2 ? LEVEL_2_MAG_MODE_DURATION_MS : DEFAULT_MAG_MODE_DURATION_MS;
+    this.magModeEndsAt = this.time.now + magDurationMs;
     this.emitHudUpdate();
     this.updateMagMode();
   }
@@ -1384,6 +1793,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   emitHudUpdate() {
+    this.syncSelectedWeaponAmmoState();
     const ammo = Math.floor(this.state.ammo);
     const health = Math.floor(this.state.hp);
     if (this.ammoText?.active) {
@@ -2704,6 +3114,58 @@ export class GameScene extends Phaser.Scene {
     this.ownedWeaponIds = owned;
   }
 
+  createWeaponAmmoState() {
+    const weaponIds = ["m203", "tavor", "mag"];
+    const ammoState = {};
+    weaponIds.forEach((weaponId) => {
+      const maxAmmo = getWeaponMaxAmmoCapacity(this.registry, weaponId);
+      ammoState[weaponId] = {
+        ammo: maxAmmo,
+        maxAmmo
+      };
+    });
+
+    return ammoState;
+  }
+
+  getWeaponAmmoState(weaponId) {
+    const existing = this.weaponAmmoById?.[weaponId];
+    if (existing) {
+      return existing;
+    }
+
+    const maxAmmo = getWeaponMaxAmmoCapacity(this.registry, weaponId);
+    const created = { ammo: maxAmmo, maxAmmo };
+    this.weaponAmmoById[weaponId] = created;
+    return created;
+  }
+
+  syncSelectedWeaponAmmoState() {
+    const weaponId = this.selectedWeaponId;
+    if (!weaponId) {
+      return;
+    }
+
+    const ammoState = this.getWeaponAmmoState(weaponId);
+    ammoState.maxAmmo = getWeaponMaxAmmoCapacity(this.registry, weaponId);
+    ammoState.ammo = Phaser.Math.Clamp(Math.floor(this.state.ammo), 0, ammoState.maxAmmo);
+    this.state.maxAmmo = ammoState.maxAmmo;
+    this.state.ammo = ammoState.ammo;
+  }
+
+  applyCurrentWeaponAmmoState() {
+    const weaponId = this.selectedWeaponId;
+    if (!weaponId) {
+      return;
+    }
+
+    const ammoState = this.getWeaponAmmoState(weaponId);
+    ammoState.maxAmmo = getWeaponMaxAmmoCapacity(this.registry, weaponId);
+    ammoState.ammo = Phaser.Math.Clamp(Math.floor(ammoState.ammo), 0, ammoState.maxAmmo);
+    this.state.maxAmmo = ammoState.maxAmmo;
+    this.state.refillAmmo(ammoState.ammo);
+  }
+
   getValidSelectedWeaponId() {
     if (this.ownedWeaponIds.includes(this.selectedWeaponId)) {
       return this.selectedWeaponId;
@@ -2726,7 +3188,9 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    this.syncSelectedWeaponAmmoState();
     this.selectedWeaponId = nextWeaponId;
+    this.applyCurrentWeaponAmmoState();
     this.rebuildWeaponView();
     this.lastShotAtMs = this.time.now;
     this.emitHudUpdate();

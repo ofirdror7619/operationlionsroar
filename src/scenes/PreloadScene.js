@@ -5,6 +5,7 @@ import storeM203Url from "../assets/images/store/m-203-store.png";
 import storeMagUrl from "../assets/images/store/MAG-store.png";
 import storeGrenadeUrl from "../assets/images/store/grenade-store.png";
 import storeTavorUrl from "../assets/images/store/Tavor-TAR-21-store.png";
+import storeCeramicVestUrl from "../assets/images/store/ceramic-vest-store.png";
 import m203IdleUrl from "../assets/images/game/weapons/m-203/m-203-idle.png";
 import m203FiringUrl from "../assets/images/game/weapons/m-203/m-203-firing.png";
 import m203FiringGrenadeUrl from "../assets/images/game/weapons/m-203/m-203-firing-grenade.png";
@@ -13,6 +14,9 @@ import tavorFiringUrl from "../assets/images/game/weapons/tavor-tar-21/tavor-fir
 import tavorFireUrl from "../assets/audio/tavor.mp3";
 import magIdleUrl from "../assets/images/game/weapons/fn-mag-58/mag-idle.png";
 import magFiringUrl from "../assets/images/game/weapons/fn-mag-58/mag-firing.png";
+import level4BackgroundUrl from "../assets/images/game/background-2.png";
+import level4FailedBackgroundUrl from "../assets/images/game/background-2-failed.png";
+import level4SuccessBackgroundUrl from "../assets/images/game/background-2-success.png";
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -26,7 +30,11 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image("store-item-mag", storeMagUrl);
     this.load.image("store-item-grenade", storeGrenadeUrl);
     this.load.image("store-item-tavor", storeTavorUrl);
+    this.load.image("store-item-ceramic-vest", storeCeramicVestUrl);
     this.load.image("bg", "assets/images/game/background.png");
+    this.load.image("bg-level4", level4BackgroundUrl);
+    this.load.image("bg-level4-failed", level4FailedBackgroundUrl);
+    this.load.image("bg-level4-success", level4SuccessBackgroundUrl);
     this.load.image("health-bar", "assets/images/hud/health-bar.png");
     this.load.image("weapon-m203", "assets/images/hud/m-203-hud.png");
     this.load.image("weapon-mag", "assets/images/hud/MAG-hud.png");
@@ -70,7 +78,6 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image("mag-weapon-pickup", "assets/images/game/MAG-game.png");
     this.load.image("magazine", "assets/images/game/magazine.png");
     this.load.image("medikit", "assets/images/game/medikit.png");
-    this.load.image("heart-pickup", "assets/images/game/heart.png");
     this.load.image("grenade-pickup", "assets/images/game/grenade.png");
     this.load.audio("bg-music", "assets/audio/music.mp3");
     this.load.audio("ak47-fire", "assets/audio/ak-47.mp3");
