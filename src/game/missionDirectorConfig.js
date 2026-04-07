@@ -18,8 +18,8 @@ export const LEVEL_4_SPAWN_POINTS = [
 
 export const PHASE_DIRECTOR_CONFIGS = {
   1: {
-    durationMs: 110000,
-    extractionStartMs: 105000,
+    durationMs: 20000,
+    extractionStartMs: 17000,
     phases: [
       {
         id: "L1-A",
@@ -107,8 +107,8 @@ export const PHASE_DIRECTOR_CONFIGS = {
     ]
   },
   3: {
-    durationMs: 150000,
-    extractionStartMs: 142000,
+    durationMs: 20000,
+    extractionStartMs: 17000,
     phases: [
       {
         id: "L3-A",

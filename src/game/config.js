@@ -5,6 +5,7 @@ import { MenuScene } from "../scenes/MenuScene";
 import { OperationCenterScene } from "../scenes/OperationCenterScene";
 import { StoreScene } from "../scenes/StoreScene";
 import { GameScene } from "../scenes/GameScene";
+import { AfterActionScene } from "../scenes/AfterActionScene";
 
 export const GAME_WIDTH = 960;
 export const GAME_HEIGHT = 540;
@@ -24,7 +25,7 @@ export const gameConfig = {
       debug: false
     }
   },
-  scene: [BootScene, PreloadScene, MenuScene, OperationCenterScene, StoreScene, GameScene],
+  scene: [BootScene, PreloadScene, MenuScene, OperationCenterScene, StoreScene, GameScene, AfterActionScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH

@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { EnemySpawner } from "../systems/EnemySpawner";
 import { GameState } from "../systems/GameState";
 import { PLAY_WIDTH } from "../game/config";
-import { MAX_MISSION_ID, MISSION_REWARD_BY_LEVEL } from "../game/progressionConfig";
+import { MISSION_REWARD_BY_LEVEL } from "../game/progressionConfig";
 import { getGrenadeBlastRadius, getWeaponMaxAmmoCapacity } from "../game/upgradeConfig";
 import { UI_LAYOUT, UI_MOTION } from "../game/uiTokens";
 import { DEFAULT_SPAWN_POINTS } from "../game/enemySpawnerConfig";
@@ -71,6 +71,11 @@ import {
 export class GameScene extends Phaser.Scene {
   constructor() {
     super("game");
+    this.m203ShockwaveRadius = 118;
+    this.tavorPrecisionChainGoal = 3;
+    this.tavorPrecisionAmmoReward = 9;
+    this.magSuppressionRadius = 92;
+    this.magSuppressionCooldownMs = 850;
     this.maxLevelTimerStepMs = 100;
     this.levelId = 1;
     this.state = null;
@@ -184,6 +189,10 @@ export class GameScene extends Phaser.Scene {
     this.currentDirectorPhaseId = "";
     this.isExtractionWindowActive = false;
     this.hostageZoneRect = null;
+    this.runStats = this.createInitialRunStats();
+    this.tavorPrecisionChainCount = 0;
+    this.lastMagSuppressionAtMs = -99999;
+    this.lastAfterActionReport = null;
   }
 
   init(data = {}) {
@@ -204,6 +213,10 @@ export class GameScene extends Phaser.Scene {
     this.lastShotAtMs = -99999;
     this.levelElapsedMs = 0;
     this.levelDurationMs = this.getLevelDurationMs();
+    this.runStats = this.createInitialRunStats();
+    this.tavorPrecisionChainCount = 0;
+    this.lastMagSuppressionAtMs = -99999;
+    this.lastAfterActionReport = null;
     this.currentDirectorPhaseId = "";
     this.isExtractionWindowActive = false;
     this.hostageZoneRect = this.createHostageZoneRect();
@@ -253,9 +266,14 @@ export class GameScene extends Phaser.Scene {
 
     const initialPhaseConfig = this.getCurrentPhaseConfig();
     this.spawner = new EnemySpawner(this, this.enemies, {
+      enemyTextureKeys: ["enemy", "enemy-grenade", "enemy-3"],
       spawnDelayMs: initialPhaseConfig?.spawnDelayMs ?? 1200,
       maxActive: initialPhaseConfig?.maxActive ?? 6,
-      enemyTextureWeights: initialPhaseConfig?.enemyWeights,
+      enemyTextureWeights: {
+        enemy: 1,
+        "enemy-grenade": 1,
+        "enemy-3": 1
+      },
       spawnsEnabled: true,
       spawnPoints: this.getSpawnPointsForCurrentLevel(),
       enemyOptions: {
@@ -265,9 +283,15 @@ export class GameScene extends Phaser.Scene {
           this.showEnemyMuzzleFlash(enemy);
           this.flashPlayerHit();
           const isGrenadeEnemy = enemy?.enemyTypeKey === "enemy-grenade";
-          const rawDamage = isGrenadeEnemy ? GRENADE_ENEMY_FIRE_DAMAGE : ENEMY_FIRE_DAMAGE;
+          const isEnemy3 = enemy?.enemyTypeKey === "enemy-3";
+          const rawDamage = isEnemy3
+            ? GRENADE_ENEMY_FIRE_DAMAGE * 2
+            : isGrenadeEnemy
+              ? GRENADE_ENEMY_FIRE_DAMAGE
+              : ENEMY_FIRE_DAMAGE;
           const appliedDamage = this.getIncomingDamageAfterArmor(rawDamage);
           this.state.applyDamage(appliedDamage);
+          this.recordDamageTaken(appliedDamage);
           this.cameras.main.shake(120, 0.003);
 
           if (this.state.hp <= 0) {
@@ -487,6 +511,26 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  createInitialRunStats() {
+    return {
+      shotsFired: 0,
+      enemyHits: 0,
+      headshots: 0,
+      grenadesThrown: 0,
+      grenadeKills: 0,
+      damageTaken: 0
+    };
+  }
+
+  recordDamageTaken(amount) {
+    const normalizedDamage = Number(amount);
+    if (!Number.isFinite(normalizedDamage) || normalizedDamage <= 0) {
+      return;
+    }
+
+    this.runStats.damageTaken += normalizedDamage;
+  }
+
   tryShoot(pointer) {
     const cooldownMs = this.isMagFiringMechanicActive() ? MAG_FIRE_COOLDOWN_MS : BASE_FIRE_COOLDOWN_MS;
     const nowMs = this.time.now;
@@ -513,6 +557,7 @@ export class GameScene extends Phaser.Scene {
 
     this.playFireSound();
     this.playWeaponActionAnimation("fire");
+    this.runStats.shotsFired += 1;
 
     if (this.tryTriggerHostageFailFromShot(pointer.worldX, pointer.worldY)) {
       return;
@@ -537,6 +582,10 @@ export class GameScene extends Phaser.Scene {
 
     if (!didHit) {
       this.emitHudUpdate();
+    }
+
+    if (!didHitEnemy && this.isMagFiringMechanicActive()) {
+      this.tryApplyMagSuppression(pointer.worldX, pointer.worldY);
     }
 
     this.playCrosshairShotFeedback(didHitEnemy, false);
@@ -581,7 +630,12 @@ export class GameScene extends Phaser.Scene {
       : this.isTavorMechanicActive()
         ? "TAVOR TAR-21"
         : "M-203";
-    return this.killEnemy(targetEnemy, { isHeadshot, killSource });
+    const weaponId = this.isMagFiringMechanicActive()
+      ? "mag"
+      : this.isTavorMechanicActive()
+        ? "tavor"
+        : "m203";
+    return this.killEnemy(targetEnemy, { isHeadshot, killSource, weaponId });
   }
 
   throwGrenade(pointer) {
@@ -599,6 +653,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.syncGrenadesToRegistry();
+    this.runStats.grenadesThrown += 1;
 
     this.playGrenadeSound();
     this.playWeaponActionAnimation("grenade");
@@ -645,6 +700,7 @@ export class GameScene extends Phaser.Scene {
     const emitHudUpdate = options.emitHudUpdate ?? true;
     const isHeadshot = options.isHeadshot ?? false;
     const killSource = options.killSource ?? "M-203";
+    const weaponId = options.weaponId ?? null;
     if (!enemy?.active) {
       return false;
     }
@@ -654,7 +710,19 @@ export class GameScene extends Phaser.Scene {
     this.stopEnemyFireSound(enemy);
     enemy.kill();
     this.killCount += 1;
+    this.runStats.enemyHits += 1;
+    if (isHeadshot) {
+      this.runStats.headshots += 1;
+    }
+    if (killSource === "GRENADE") {
+      this.runStats.grenadeKills += 1;
+    }
     this.state.addScore(enemy.points);
+    this.applyWeaponIdentityOnKill(weaponId, {
+      isHeadshot,
+      enemyX: deathX,
+      enemyY: deathY
+    });
     this.registerKillFeedback({
       isHeadshot,
       killSource
@@ -677,6 +745,105 @@ export class GameScene extends Phaser.Scene {
     }
 
     return true;
+  }
+
+  applyWeaponIdentityOnKill(weaponId, context = {}) {
+    if (weaponId === "m203") {
+      this.applyM203Shockwave(context.enemyX, context.enemyY);
+      this.tavorPrecisionChainCount = 0;
+      return;
+    }
+
+    if (weaponId === "tavor") {
+      if (context.isHeadshot) {
+        this.tavorPrecisionChainCount += 1;
+        if (this.tavorPrecisionChainCount >= this.tavorPrecisionChainGoal) {
+          this.tavorPrecisionChainCount = 0;
+          this.state.addAmmo(this.tavorPrecisionAmmoReward);
+          this.syncSelectedWeaponAmmoState();
+          this.showPerkText(context.enemyX, context.enemyY, `TAVOR PRECISION +${this.tavorPrecisionAmmoReward} AMMO`);
+        }
+      } else {
+        this.tavorPrecisionChainCount = 0;
+      }
+      return;
+    }
+
+    this.tavorPrecisionChainCount = 0;
+  }
+
+  applyM203Shockwave(originX, originY) {
+    if (!Number.isFinite(originX) || !Number.isFinite(originY)) {
+      return;
+    }
+
+    let affectedEnemies = 0;
+    this.enemies.children.each((enemy) => {
+      if (!enemy?.active) {
+        return;
+      }
+
+      const distance = Phaser.Math.Distance.Between(originX, originY, enemy.x, enemy.y);
+      if (distance <= this.m203ShockwaveRadius) {
+        enemy.forceIdle?.();
+        affectedEnemies += 1;
+      }
+    });
+
+    if (affectedEnemies > 0) {
+      this.showPerkText(originX, originY, "M-203 SHOCKWAVE");
+    }
+  }
+
+  tryApplyMagSuppression(originX, originY) {
+    const now = this.time.now;
+    if (now - this.lastMagSuppressionAtMs < this.magSuppressionCooldownMs) {
+      return;
+    }
+
+    let affectedEnemies = 0;
+    this.enemies.children.each((enemy) => {
+      if (!enemy?.active) {
+        return;
+      }
+
+      const distance = Phaser.Math.Distance.Between(originX, originY, enemy.x, enemy.y);
+      if (distance > this.magSuppressionRadius) {
+        return;
+      }
+
+      if (enemy.state === "AIMING" || enemy.state === "FIRING") {
+        enemy.forceIdle?.();
+        affectedEnemies += 1;
+      }
+    });
+
+    if (affectedEnemies <= 0) {
+      return;
+    }
+
+    this.lastMagSuppressionAtMs = now;
+    this.showPerkText(originX, originY, `SUPPRESSION x${affectedEnemies}`);
+  }
+
+  showPerkText(x, y, message) {
+    const text = this.add.text(x, y - 20, message, {
+      fontFamily: UI_DISPLAY_FONT,
+      fontSize: "22px",
+      color: "#b9fff2",
+      stroke: "#04211d",
+      strokeThickness: 4,
+      letterSpacing: 1
+    }).setOrigin(0.5).setDepth(91);
+
+    this.tweens.add({
+      targets: text,
+      y: y - 46,
+      alpha: 0,
+      duration: 520,
+      ease: "Sine.Out",
+      onComplete: () => text.destroy()
+    });
   }
 
   trySpawnMagazineDrop(originX, originY) {
@@ -1067,6 +1234,7 @@ export class GameScene extends Phaser.Scene {
     this.hideMissionFailScreen?.();
     this.updateReloadWarning(1);
     this.comboText?.setVisible(false);
+    this.lastAfterActionReport = this.buildAfterActionReport();
     if (this.gameStatusText?.active) {
       this.gameStatusText
         .setFontSize("64px")
@@ -1100,19 +1268,40 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.hasContinuedAfterMissionComplete = true;
-    const currentBudget = this.getStoredBudget();
-    const missionCompletionReward = this.getMissionCompletionReward();
-    this.registry.set("playerBudget", currentBudget + missionCompletionReward);
-    const nextMissionId = Phaser.Math.Clamp(this.levelId + 1, 1, MAX_MISSION_ID);
-    this.registry.set("currentMissionId", nextMissionId);
-    this.registry.set("operationCenterNotice", `MISSION COMPLETE +$${missionCompletionReward}`);
     this.hideMissionFailScreen?.();
-    this.scene.start("operation-center");
+    this.scene.start("after-action", {
+      levelId: this.levelId,
+      killCount: this.killCount,
+      runStats: { ...this.runStats },
+      report: this.lastAfterActionReport ?? this.buildAfterActionReport()
+    });
   }
 
   getMissionCompletionReward() {
     const completedLevel = Math.max(1, Math.floor(this.levelId || 1));
     return MISSION_REWARD_BY_LEVEL[completedLevel] ?? 1000;
+  }
+
+  buildAfterActionReport() {
+    const elapsedMs = this.getElapsedLevelMs();
+    const accuracyPercent = this.runStats.shotsFired > 0
+      ? Math.round((this.runStats.enemyHits / this.runStats.shotsFired) * 100)
+      : 0;
+    const baseReward = this.getMissionCompletionReward();
+    const headshotBonus = this.runStats.headshots * 20;
+    const efficiencyBonus = Math.max(0, Math.min(420, accuracyPercent * 4));
+    const disciplineBonus = Math.max(0, 160 - this.runStats.damageTaken);
+    const totalReward = baseReward + headshotBonus + efficiencyBonus + Math.round(disciplineBonus);
+
+    return {
+      elapsedSeconds: Math.floor(elapsedMs / 1000),
+      accuracyPercent,
+      baseReward,
+      headshotBonus,
+      efficiencyBonus,
+      disciplineBonus: Math.round(disciplineBonus),
+      totalReward
+    };
   }
 
   getStoredGrenadeCount() {
@@ -1126,15 +1315,6 @@ export class GameScene extends Phaser.Scene {
 
   syncGrenadesToRegistry() {
     this.registry.set("playerGrenades", Math.max(0, Math.floor(this.state?.grenades ?? 0)));
-  }
-
-  getStoredBudget() {
-    const budgetFromRegistry = this.registry.get("playerBudget");
-    if (typeof budgetFromRegistry !== "number" || !Number.isFinite(budgetFromRegistry)) {
-      return 0;
-    }
-
-    return Math.max(0, Math.floor(budgetFromRegistry));
   }
 
   hasCeramicVest() {
@@ -1346,8 +1526,7 @@ export class GameScene extends Phaser.Scene {
       this.currentDirectorPhaseId = phase.id;
       this.spawner.applyDirectorConfig({
         spawnDelayMs: phase.spawnDelayMs,
-        maxActive: phase.maxActive,
-        enemyWeights: phase.enemyWeights
+        maxActive: phase.maxActive
       });
     }
 

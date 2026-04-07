@@ -419,7 +419,7 @@ export class OperationCenterScene extends Phaser.Scene {
 
     if (levelId === 3) {
       return (
-        "Primary: Survive for 150 seconds.\n" +
+        "Primary: Survive for 20 seconds.\n" +
         "Threat: High-tempo enemy fire and grenades.\n" +
         "Directive: Stay mobile and protect your health."
       );
@@ -434,7 +434,7 @@ export class OperationCenterScene extends Phaser.Scene {
     }
 
     return (
-      "Primary: Survive for 110 seconds.\n" +
+      "Primary: Survive for 20 seconds.\n" +
       "Threat: Hostile infantry and grenade units.\n" +
       "Directive: Maintain ammo discipline and eliminate priority targets first."
     );

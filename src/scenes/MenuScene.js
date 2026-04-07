@@ -20,6 +20,7 @@ export class MenuScene extends Phaser.Scene {
     this.startButton = null;
     this.startLabel = null;
     this.startBlinkTween = null;
+    this.creditText = null;
     this.canStart = false;
   }
 
@@ -130,6 +131,18 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setVisible(false);
 
+    this.creditText = this.add
+      .text(playWidth / 2, height - 10, "Operation Lion's Roar (2026) - By Ofir Dror", {
+        fontFamily: UI_BODY_FONT,
+        fontSize: "18px",
+        color: UI_COLORS.body,
+        stroke: UI_COLORS.textStroke,
+        strokeThickness: 2,
+        letterSpacing: 0.5
+      })
+      .setOrigin(0.5, 1)
+      .setAlpha(0.92);
+
     this.startButton.on("pointerover", () => {
       if (!this.canStart) {
         return;
@@ -194,7 +207,7 @@ export class MenuScene extends Phaser.Scene {
   revealStartButton() {
     const buttonHalfHeight = this.startButton.height * 0.5;
     const textToButtonGap = 14;
-    const creditTopY = this.scale.height - 72;
+    const creditTopY = this.creditText ? this.creditText.getTopCenter().y : this.scale.height - 72;
     const buttonToCreditGap = 4;
 
     let minButtonY = this.briefingText.y + this.briefingText.height + textToButtonGap + buttonHalfHeight;

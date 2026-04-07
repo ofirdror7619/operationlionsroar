@@ -32,10 +32,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.enemyTypeKey = textureKey;
 
     const isEnemy2Layout = textureKey === "enemy-grenade";
-    this.idleFrames = options.idleFrames ?? (isEnemy2Layout ? [0, 1] : [4]);
-    this.aimFrames = options.aimFrames ?? (isEnemy2Layout ? [2, 3, 4] : [4, 5]);
-    this.fireFrames = options.fireFrames ?? (isEnemy2Layout ? [5, 6, 7, 8] : [5]);
-    this.deadFrames = options.deadFrames ?? (isEnemy2Layout ? [9, 10] : [8, 9]);
+    const isEnemy3Layout = textureKey === "enemy-3";
+    this.idleFrames = options.idleFrames ?? (isEnemy3Layout ? [0, 1] : isEnemy2Layout ? [0, 1] : [4]);
+    this.aimFrames = options.aimFrames ?? (isEnemy3Layout ? [2, 3] : isEnemy2Layout ? [2, 3, 4] : [4, 5]);
+    this.fireFrames = options.fireFrames ?? (isEnemy3Layout ? [4, 5, 6] : isEnemy2Layout ? [5, 6, 7, 8] : [5]);
+    this.deadFrames = options.deadFrames ?? (isEnemy3Layout ? [7] : isEnemy2Layout ? [9, 10] : [8, 9]);
     if (typeof options.idleFrame === "number") {
       this.idleFrames = [options.idleFrame];
     }
@@ -51,6 +52,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.aimDurationMs = options.aimDurationMs ?? 3000;
     this.fireDurationMs = options.fireDurationMs ?? 170;
     this.idleDurationMs = options.idleDurationMs ?? 550;
+    this.fireAnimRepeat = options.fireAnimRepeat ?? (isEnemy3Layout ? 0 : -1);
     this.onPlayerHit = options.onPlayerHit ?? (() => {});
     this.points = options.points ?? 100;
     this.state = ENEMY_STATE.IDLE;
@@ -214,15 +216,33 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const fireKey = `${textureKey}-fire`;
     const deadKey = `${textureKey}-dead`;
 
-    const mapFrames = (frames) =>
-      frames.map((frame) => {
+    const mapFrames = (frames) => {
+      const mappedFrames = frames.map((frame) => {
         const extractedKey = `${this.enemyTypeKey}-frame-${frame}`;
         if (this.scene.textures.exists(extractedKey)) {
           return { key: extractedKey };
         }
 
-        return { key: textureKey, frame };
-      });
+        const baseTexture = this.scene.textures.get(textureKey);
+        const sourceFrame = baseTexture?.get?.(frame);
+        if (sourceFrame && sourceFrame.name !== "__BASE") {
+          return { key: textureKey, frame };
+        }
+
+        return null;
+      }).filter(Boolean);
+
+      if (mappedFrames.length > 0) {
+        return mappedFrames;
+      }
+
+      const fallbackExtracted = `${this.enemyTypeKey}-frame-0`;
+      if (this.scene.textures.exists(fallbackExtracted)) {
+        return [{ key: fallbackExtracted }];
+      }
+
+      return [{ key: textureKey }];
+    };
 
     if (!this.scene.anims.exists(idleKey)) {
       this.scene.anims.create({
@@ -249,7 +269,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         key: fireKey,
         frames: mapFrames(this.fireFrames),
         frameRate: 12,
-        repeat: -1
+        repeat: this.fireAnimRepeat
       });
     }
 

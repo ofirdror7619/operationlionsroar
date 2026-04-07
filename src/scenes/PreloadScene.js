@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import operationCenterBackgroundUrl from "../assets/images/operation-center/background.png";
+import afterActionBackgroundUrl from "../assets/images/after-mission-report/background.png";
 import storeBackgroundUrl from "../assets/images/store/background.png";
 import storeM203Url from "../assets/images/store/m-203-store.png";
 import storeMagUrl from "../assets/images/store/MAG-store.png";
@@ -14,6 +15,7 @@ import tavorFiringUrl from "../assets/images/game/weapons/tavor-tar-21/tavor-fir
 import tavorFireUrl from "../assets/audio/tavor.mp3";
 import magIdleUrl from "../assets/images/game/weapons/fn-mag-58/mag-idle.png";
 import magFiringUrl from "../assets/images/game/weapons/fn-mag-58/mag-firing.png";
+import enemy3SpriteSheetUrl from "../assets/images/game/enemy-3/enemy-3-sprite-sheet.png";
 import level4BackgroundUrl from "../assets/images/game/background-2.png";
 import level4FailedBackgroundUrl from "../assets/images/game/background-2-failed.png";
 import level4SuccessBackgroundUrl from "../assets/images/game/background-2-success.png";
@@ -25,6 +27,7 @@ export class PreloadScene extends Phaser.Scene {
 
   preload() {
     this.load.image("operation-center-bg", operationCenterBackgroundUrl);
+    this.load.image("after-action-bg", afterActionBackgroundUrl);
     this.load.image("store-bg", storeBackgroundUrl);
     this.load.image("store-item-m203", storeM203Url);
     this.load.image("store-item-mag", storeMagUrl);
@@ -88,6 +91,7 @@ export class PreloadScene extends Phaser.Scene {
     this.load.audio("mag-fire", "assets/audio/MAG.mp3");
     this.load.image("enemy", "assets/images/game/enemy-1/enemy-1-sprite-sheet.png");
     this.load.image("enemy-grenade", "assets/images/game/enemy-2/enemy-2-sprite-sheet.png");
+    this.load.image("enemy-3", enemy3SpriteSheetUrl);
     this.createEffectsTextures();
     this.createUiTextures();
   }
@@ -325,6 +329,142 @@ export class PreloadScene extends Phaser.Scene {
         );
         canvasTexture.refresh();
       });
+    });
+
+    this.createNormalizedEnemy3FrameTextures();
+  }
+
+  createNormalizedEnemy3FrameTextures() {
+    const textureKey = "enemy-3";
+    if (!this.textures.exists(textureKey)) {
+      return;
+    }
+
+    const texture = this.textures.get(textureKey);
+    const source = texture?.getSourceImage?.();
+    if (!source) {
+      return;
+    }
+
+    const width = source.width;
+    const height = source.height;
+    const sample = this.textures.createCanvas(`${textureKey}-sample`, width, height);
+    const sampleCtx = sample.getContext();
+    sampleCtx.clearRect(0, 0, width, height);
+    sampleCtx.drawImage(source, 0, 0, width, height, 0, 0, width, height);
+    const pixels = sampleCtx.getImageData(0, 0, width, height).data;
+    this.textures.remove(`${textureKey}-sample`);
+
+    const visited = new Uint8Array(width * height);
+    const stackX = [];
+    const stackY = [];
+    const components = [];
+    const alphaThreshold = 12;
+    const minArea = 1200;
+
+    const pixelIndex = (x, y) => y * width + x;
+    const alphaAt = (x, y) => pixels[(pixelIndex(x, y) * 4) + 3];
+
+    const tryPush = (x, y) => {
+      if (x < 0 || y < 0 || x >= width || y >= height) {
+        return;
+      }
+      const idx = pixelIndex(x, y);
+      if (visited[idx] || alphaAt(x, y) <= alphaThreshold) {
+        return;
+      }
+      visited[idx] = 1;
+      stackX.push(x);
+      stackY.push(y);
+    };
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const seedIdx = pixelIndex(x, y);
+        if (visited[seedIdx] || alphaAt(x, y) <= alphaThreshold) {
+          continue;
+        }
+
+        visited[seedIdx] = 1;
+        stackX.length = 0;
+        stackY.length = 0;
+        stackX.push(x);
+        stackY.push(y);
+
+        let area = 0;
+        let minX = x;
+        let minY = y;
+        let maxX = x;
+        let maxY = y;
+
+        while (stackX.length > 0) {
+          const cx = stackX.pop();
+          const cy = stackY.pop();
+          area += 1;
+          if (cx < minX) minX = cx;
+          if (cy < minY) minY = cy;
+          if (cx > maxX) maxX = cx;
+          if (cy > maxY) maxY = cy;
+
+          tryPush(cx - 1, cy);
+          tryPush(cx + 1, cy);
+          tryPush(cx, cy - 1);
+          tryPush(cx, cy + 1);
+        }
+
+        if (area >= minArea) {
+          components.push({
+            minX,
+            minY,
+            maxX,
+            maxY,
+            width: maxX - minX + 1,
+            height: maxY - minY + 1,
+            area
+          });
+        }
+      }
+    }
+
+    if (components.length <= 0) {
+      return;
+    }
+
+    components.sort((a, b) => {
+      if (a.minY !== b.minY) {
+        return a.minY - b.minY;
+      }
+      return a.minX - b.minX;
+    });
+
+    const frames = components.slice(0, 9);
+    const normalizedWidth = 420;
+    const normalizedHeight = 420;
+    const bottomPadding = 8;
+
+    frames.forEach((bounds, frameIndex) => {
+      const key = `${textureKey}-frame-${frameIndex}`;
+      if (this.textures.exists(key)) {
+        return;
+      }
+
+      const canvasTexture = this.textures.createCanvas(key, normalizedWidth, normalizedHeight);
+      const ctx = canvasTexture.getContext();
+      ctx.clearRect(0, 0, normalizedWidth, normalizedHeight);
+      const drawX = Math.floor((normalizedWidth - bounds.width) * 0.5);
+      const drawY = normalizedHeight - bottomPadding - bounds.height;
+      ctx.drawImage(
+        source,
+        bounds.minX,
+        bounds.minY,
+        bounds.width,
+        bounds.height,
+        drawX,
+        drawY,
+        bounds.width,
+        bounds.height
+      );
+      canvasTexture.refresh();
     });
   }
 
