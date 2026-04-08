@@ -3,12 +3,15 @@ import { HUD_PANEL_WIDTH, PLAY_WIDTH } from "../game/config";
 import { START_MISSION_ID, START_PLAYER_BUDGET } from "../game/progressionConfig";
 import { GRENADE_RADIUS_UPGRADE_REGISTRY_KEY, WEAPON_MAG_UPGRADE_REGISTRY_KEYS } from "../game/upgradeConfig";
 import { UI_COLORS } from "../game/uiTokens";
+import { applyMasterMute, ensureAudioSettings, getAudioSettings, getMusicOutputVolume, updateAudioSettings } from "../game/audioSettings";
 
 const MUSIC_LOOP_START_SECONDS = 15;
 const MUSIC_LOOP_MARKER = "main-loop";
 const UI_DISPLAY_FONT = "'Oxanium', 'Barlow Condensed', sans-serif";
 const UI_BODY_FONT = "'Share Tech Mono', 'Chakra Petch', monospace";
 const TEST_GRANT_STARTER_WEAPON = false;
+const VFX_REGISTRY_KEY = "vfxEnabled";
+const VFX_SETTINGS_STORAGE_KEY = "operation-lions-roar-vfx-settings-v1";
 export class MenuScene extends Phaser.Scene {
   constructor() {
     super("menu");
@@ -22,9 +25,15 @@ export class MenuScene extends Phaser.Scene {
     this.startBlinkTween = null;
     this.creditText = null;
     this.canStart = false;
+    this.settingsButtonHit = null;
+    this.settingsPanel = null;
+    this.settingsControls = null;
   }
 
   create() {
+    ensureAudioSettings(this.registry);
+    this.ensureVfxSettings();
+    applyMasterMute(this);
     this.startBackgroundMusic();
 
     const { height } = this.scale;
@@ -99,6 +108,7 @@ export class MenuScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
+
     this.briefingText = this.add
       .text(64, 100, "", {
         fontFamily: UI_BODY_FONT,
@@ -156,7 +166,14 @@ export class MenuScene extends Phaser.Scene {
       }
     });
 
-    this.input.on("pointerdown", () => {
+    this.input.on("pointerdown", (pointer) => {
+      if (this.isPointerOnSettingsControls(pointer)) {
+        return;
+      }
+      if (this.settingsPanel?.visible) {
+        this.toggleSettingsPanel(false);
+        return;
+      }
       if (!this.canStart) {
         this.completeTypewriter();
       }
@@ -263,9 +280,315 @@ export class MenuScene extends Phaser.Scene {
     this.scene.start("operation-center");
   }
 
+  createSettingsControls() {
+    const buttonX = this.scale.width - 16;
+    const buttonY = 34;
+    const panelWidth = 316;
+    const panelHeight = 208;
+    const panelX = this.scale.width - panelWidth * 0.5 - 18;
+    const panelY = 154;
+    const panelDepth = 40;
+
+    const buttonBackdrop = this.add.circle(buttonX, buttonY, 15, 0x09222c, 0.9)
+      .setStrokeStyle(2, 0x88dce8, 0.9)
+      .setDepth(panelDepth);
+    const gearIcon = this.add
+      .text(buttonX, buttonY, "\u2699", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "20px",
+        color: "#dbf8ff",
+        stroke: "#051c23",
+        strokeThickness: 3
+      })
+      .setOrigin(0.5)
+      .setDepth(panelDepth + 1);
+    const buttonHit = this.add
+      .circle(buttonX, buttonY, 18, 0xffffff, 0.001)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(panelDepth + 2);
+    buttonHit.input.cursor = "pointer";
+
+    const panel = this.add.container(panelX, panelY).setDepth(panelDepth + 8).setVisible(false).setAlpha(0);
+    const panelBg = this.add
+      .rectangle(0, 0, panelWidth, panelHeight, 0x06131a, 0.96)
+      .setStrokeStyle(2, 0x7cc8dc, 0.7);
+    const panelTitle = this.add
+      .text(0, -panelHeight * 0.5 + 16, "AUDIO / VFX SETTINGS", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "18px",
+        color: "#dff9ff",
+        stroke: "#032028",
+        strokeThickness: 3,
+        letterSpacing: 1
+      })
+      .setOrigin(0.5, 0);
+
+    const musicLabel = this.add.text(-panelWidth * 0.5 + 18, -42, "Music", {
+      fontFamily: UI_BODY_FONT,
+      fontSize: "18px",
+      color: "#b9e8f2"
+    }).setOrigin(0, 0.5);
+    const sfxLabel = this.add.text(-panelWidth * 0.5 + 18, 0, "SFX", {
+      fontFamily: UI_BODY_FONT,
+      fontSize: "18px",
+      color: "#b9e8f2"
+    }).setOrigin(0, 0.5);
+
+    const trackWidth = 164;
+    const trackX = 64;
+    const createTrack = (y) => this.add.rectangle(trackX, y, trackWidth, 8, 0x173640, 0.9)
+      .setStrokeStyle(1, 0x6ea6b6, 0.8)
+      .setOrigin(0, 0.5);
+    const createFill = (y) => this.add.rectangle(trackX, y, trackWidth, 8, 0x7fe5f7, 0.9).setOrigin(0, 0.5);
+    const createKnob = (y) => this.add.circle(trackX, y, 9, 0xe9ffff, 1).setStrokeStyle(2, 0x2a6d7b, 1);
+    const musicTrack = createTrack(-42).setInteractive({ useHandCursor: true });
+    const musicFill = createFill(-42);
+    const musicKnob = createKnob(-42).setInteractive({ useHandCursor: true, draggable: true });
+    const sfxTrack = createTrack(0).setInteractive({ useHandCursor: true });
+    const sfxFill = createFill(0);
+    const sfxKnob = createKnob(0).setInteractive({ useHandCursor: true, draggable: true });
+
+    const soundButton = this.add
+      .rectangle(-78, 64, 136, 36, 0x1b5260, 0.95)
+      .setStrokeStyle(1, 0x94d8e6, 0.9)
+      .setInteractive({ useHandCursor: true });
+    const soundLabel = this.add
+      .text(-78, 64, "SOUND: ON", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "15px",
+        color: "#eaffff",
+        stroke: "#042028",
+        strokeThickness: 3,
+        letterSpacing: 1
+      })
+      .setOrigin(0.5);
+    const vfxButton = this.add
+      .rectangle(78, 64, 136, 36, 0x1b5260, 0.95)
+      .setStrokeStyle(1, 0x94d8e6, 0.9)
+      .setInteractive({ useHandCursor: true });
+    const vfxLabel = this.add
+      .text(78, 64, "VFX: ON", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "15px",
+        color: "#eaffff",
+        stroke: "#042028",
+        strokeThickness: 3,
+        letterSpacing: 1
+      })
+      .setOrigin(0.5);
+
+    panel.add([
+      panelBg,
+      panelTitle,
+      musicLabel,
+      sfxLabel,
+      musicTrack,
+      musicFill,
+      musicKnob,
+      sfxTrack,
+      sfxFill,
+      sfxKnob,
+      soundButton,
+      soundLabel,
+      vfxButton,
+      vfxLabel
+    ]);
+
+    buttonHit.on("pointerover", () => {
+      buttonBackdrop.setFillStyle(0x0d3442, 0.95);
+      gearIcon.setScale(1.08);
+    });
+    buttonHit.on("pointerout", () => {
+      buttonBackdrop.setFillStyle(0x09222c, 0.9);
+      gearIcon.setScale(1);
+    });
+    buttonHit.on("pointerup", () => this.toggleSettingsPanel());
+
+    const toVolumeFromLocalX = (localX) => Phaser.Math.Clamp((localX - trackX) / trackWidth, 0, 1);
+    const handleTrackPointer = (pointer, callback) => {
+      const local = panel.getLocalPoint(pointer.worldX, pointer.worldY);
+      callback(toVolumeFromLocalX(local.x));
+    };
+
+    musicTrack.on("pointerdown", (pointer) => handleTrackPointer(pointer, (volume) => this.applyMusicVolume(volume)));
+    sfxTrack.on("pointerdown", (pointer) => handleTrackPointer(pointer, (volume) => {
+      updateAudioSettings(this.registry, { sfxVolume: volume });
+      applyMasterMute(this);
+      this.updateSettingsControlsView();
+    }));
+
+    this.input.setDraggable(musicKnob, true);
+    this.input.setDraggable(sfxKnob, true);
+    musicKnob.on("drag", (pointer) => {
+      const local = panel.getLocalPoint(pointer.worldX, pointer.worldY);
+      this.applyMusicVolume(toVolumeFromLocalX(local.x));
+    });
+    sfxKnob.on("drag", (pointer) => {
+      const local = panel.getLocalPoint(pointer.worldX, pointer.worldY);
+      updateAudioSettings(this.registry, { sfxVolume: toVolumeFromLocalX(local.x) });
+      applyMasterMute(this);
+      this.updateSettingsControlsView();
+    });
+
+    soundButton.on("pointerup", () => {
+      const settings = getAudioSettings(this.registry);
+      updateAudioSettings(this.registry, { enabled: !settings.enabled });
+      applyMasterMute(this);
+      this.applyMusicVolume(getAudioSettings(this.registry).musicVolume);
+      this.updateSettingsControlsView();
+    });
+    vfxButton.on("pointerup", () => {
+      this.setVfxEnabled(!this.getVfxEnabled());
+      this.updateSettingsControlsView();
+    });
+
+    this.settingsButtonHit = buttonHit;
+    this.settingsPanel = panel;
+    this.settingsControls = {
+      panelWidth,
+      panelHeight,
+      musicFill,
+      musicKnob,
+      sfxFill,
+      sfxKnob,
+      soundButton,
+      soundLabel,
+      vfxButton,
+      vfxLabel,
+      trackX,
+      trackWidth
+    };
+    this.updateSettingsControlsView();
+  }
+
+  updateSettingsControlsView() {
+    if (!this.settingsControls) {
+      return;
+    }
+
+    const settings = getAudioSettings(this.registry);
+    const {
+      musicFill,
+      musicKnob,
+      sfxFill,
+      sfxKnob,
+      soundButton,
+      soundLabel,
+      vfxButton,
+      vfxLabel,
+      trackX,
+      trackWidth
+    } = this.settingsControls;
+    musicFill.width = Math.max(4, trackWidth * settings.musicVolume);
+    sfxFill.width = Math.max(4, trackWidth * settings.sfxVolume);
+    musicKnob.x = trackX + trackWidth * settings.musicVolume;
+    sfxKnob.x = trackX + trackWidth * settings.sfxVolume;
+    soundButton.setFillStyle(settings.enabled ? 0x1b5260 : 0x5a2626, 0.95);
+    soundLabel.setText(settings.enabled ? "SOUND: ON" : "SOUND: OFF");
+    soundLabel.setColor(settings.enabled ? "#eaffff" : "#ffd4d4");
+
+    const vfxEnabled = this.getVfxEnabled();
+    vfxButton.setFillStyle(vfxEnabled ? 0x1b5260 : 0x5a2626, 0.95);
+    vfxLabel.setText(vfxEnabled ? "VFX: ON" : "VFX: OFF");
+    vfxLabel.setColor(vfxEnabled ? "#eaffff" : "#ffd4d4");
+  }
+
+  toggleSettingsPanel(forceVisible = null) {
+    if (!this.settingsPanel) {
+      return;
+    }
+
+    const nextVisible = forceVisible === null ? !this.settingsPanel.visible : forceVisible;
+    this.settingsPanel.setVisible(true);
+    this.tweens.killTweensOf(this.settingsPanel);
+    this.tweens.add({
+      targets: this.settingsPanel,
+      alpha: nextVisible ? 1 : 0,
+      duration: 150,
+      ease: "Quad.Out",
+      onComplete: () => {
+        if (!nextVisible && this.settingsPanel?.active) {
+          this.settingsPanel.setVisible(false);
+        }
+      }
+    });
+  }
+
+  applyMusicVolume(volume) {
+    updateAudioSettings(this.registry, { musicVolume: volume });
+    applyMasterMute(this);
+    const bgMusic = this.sound.get("bg-music");
+    if (bgMusic) {
+      bgMusic.setVolume(getMusicOutputVolume(this.registry, 0.4));
+    }
+    this.updateSettingsControlsView();
+  }
+
+  isPointerOnSettingsControls(pointer) {
+    if (!pointer) {
+      return false;
+    }
+
+    if (this.settingsButtonHit?.getBounds()?.contains(pointer.worldX, pointer.worldY)) {
+      return true;
+    }
+
+    if (!this.settingsPanel?.visible || !this.settingsControls) {
+      return false;
+    }
+
+    const panelBounds = new Phaser.Geom.Rectangle(
+      this.settingsPanel.x - this.settingsControls.panelWidth * 0.5,
+      this.settingsPanel.y - this.settingsControls.panelHeight * 0.5,
+      this.settingsControls.panelWidth,
+      this.settingsControls.panelHeight
+    );
+    return panelBounds.contains(pointer.worldX, pointer.worldY);
+  }
+
+  ensureVfxSettings() {
+    const current = this.registry.get(VFX_REGISTRY_KEY);
+    if (typeof current === "boolean") {
+      return current;
+    }
+
+    let stored = true;
+    try {
+      const raw = window.localStorage.getItem(VFX_SETTINGS_STORAGE_KEY);
+      if (raw !== null) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed?.enabled === "boolean") {
+          stored = parsed.enabled;
+        }
+      }
+    } catch {
+      stored = true;
+    }
+
+    this.registry.set(VFX_REGISTRY_KEY, stored);
+    return stored;
+  }
+
+  getVfxEnabled() {
+    this.ensureVfxSettings();
+    return this.registry.get(VFX_REGISTRY_KEY) !== false;
+  }
+
+  setVfxEnabled(enabled) {
+    const next = Boolean(enabled);
+    this.registry.set(VFX_REGISTRY_KEY, next);
+    try {
+      window.localStorage.setItem(VFX_SETTINGS_STORAGE_KEY, JSON.stringify({ enabled: next }));
+    } catch {
+      // ignore localStorage failures
+    }
+  }
+
   startBackgroundMusic() {
     const existingMusic = this.sound.get("bg-music");
+    const musicVolume = getMusicOutputVolume(this.registry, 0.4);
     if (existingMusic) {
+      existingMusic.setVolume(musicVolume);
       this.ensureMusicLoopMarker(existingMusic);
       if (existingMusic.isPlaying) {
         if (existingMusic.currentMarker?.name === MUSIC_LOOP_MARKER) {
@@ -278,7 +601,7 @@ export class MenuScene extends Phaser.Scene {
     }
 
     const music = this.sound.add("bg-music", {
-      volume: 0.4
+      volume: musicVolume
     });
     this.ensureMusicLoopMarker(music);
     music.play(MUSIC_LOOP_MARKER);

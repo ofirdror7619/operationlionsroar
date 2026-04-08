@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { PLAY_WIDTH } from "../game/config";
 import { MAX_MISSION_ID } from "../game/progressionConfig";
 import { UI_COLORS } from "../game/uiTokens";
+import { applyMasterMute, ensureAudioSettings, getAudioSettings, updateAudioSettings } from "../game/audioSettings";
 
 const UI_DISPLAY_FONT = "'Oxanium', 'Barlow Condensed', sans-serif";
 const UI_BODY_FONT = "'Share Tech Mono', 'Chakra Petch', monospace";
@@ -13,12 +14,15 @@ export class OperationCenterScene extends Phaser.Scene {
     this.storeButton = null;
     this.hasStarted = false;
     this.warningText = null;
+    this.audioControls = null;
   }
 
   create() {
     const { height } = this.scale;
     const playWidth = PLAY_WIDTH;
     const centerX = playWidth * 0.5;
+    ensureAudioSettings(this.registry);
+    applyMasterMute(this);
     this.hasStarted = false;
     const currentMissionId = this.getCurrentMissionId();
     const playerBudget = this.getPlayerBudget();
@@ -137,6 +141,7 @@ export class OperationCenterScene extends Phaser.Scene {
       .setOrigin(0, 0.5)
       .setDepth(6);
 
+
     this.warningText = this.add
       .text(centerX, height - 126, "", {
         fontFamily: UI_BODY_FONT,
@@ -164,6 +169,205 @@ export class OperationCenterScene extends Phaser.Scene {
 
     this.input.keyboard.on("keydown-ENTER", () => this.startMission());
     this.input.keyboard.on("keydown-SPACE", () => this.startMission());
+  }
+
+  createAudioControls() {
+    const buttonX = this.scale.width - 16;
+    const buttonY = 34;
+    const panelWidth = 300;
+    const panelHeight = 182;
+    const panelX = this.scale.width - panelWidth * 0.5 - 18;
+    const panelY = 156;
+
+    const buttonBackdrop = this.add
+      .circle(buttonX, buttonY, 15, 0x09222c, 0.9)
+      .setStrokeStyle(2, 0x88dce8, 0.9)
+      .setDepth(6)
+      .setAlpha(0.96);
+    const buttonIcon = this.add
+      .text(buttonX, buttonY, "\u2699", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "20px",
+        color: "#dff9ff",
+        stroke: "#04222b",
+        strokeThickness: 3,
+        letterSpacing: 1
+      })
+      .setOrigin(0.5)
+      .setDepth(7);
+    const button = this.add
+      .circle(buttonX, buttonY, 18, 0xffffff, 0.001)
+      .setDepth(8)
+      .setInteractive({ useHandCursor: true });
+    button.input.cursor = "pointer";
+
+    const panel = this.add.container(panelX, panelY).setDepth(20).setVisible(false).setAlpha(0);
+    const panelBg = this.add
+      .rectangle(0, 0, panelWidth, panelHeight, 0x06131a, 0.95)
+      .setStrokeStyle(2, 0x7cc8dc, 0.7);
+    const panelTitle = this.add
+      .text(0, -panelHeight * 0.5 + 20, "AUDIO SETTINGS", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "20px",
+        color: "#dff9ff",
+        stroke: "#032028",
+        strokeThickness: 3,
+        letterSpacing: 1
+      })
+      .setOrigin(0.5, 0);
+
+    const musicLabel = this.add.text(-panelWidth * 0.5 + 18, -36, "Music", {
+      fontFamily: UI_BODY_FONT,
+      fontSize: "18px",
+      color: "#b9e8f2"
+    }).setOrigin(0, 0.5);
+    const sfxLabel = this.add.text(-panelWidth * 0.5 + 18, 14, "SFX", {
+      fontFamily: UI_BODY_FONT,
+      fontSize: "18px",
+      color: "#b9e8f2"
+    }).setOrigin(0, 0.5);
+
+    const trackWidth = 164;
+    const trackX = 24;
+    const createTrack = (y) => this.add.rectangle(trackX, y, trackWidth, 8, 0x173640, 0.9)
+      .setStrokeStyle(1, 0x6ea6b6, 0.8)
+      .setOrigin(0, 0.5);
+    const createFill = (y) => this.add.rectangle(trackX, y, trackWidth, 8, 0x7fe5f7, 0.9).setOrigin(0, 0.5);
+    const createKnob = (y) => this.add.circle(trackX, y, 9, 0xe9ffff, 1).setStrokeStyle(2, 0x2a6d7b, 1);
+    const musicTrack = createTrack(-36).setInteractive({ useHandCursor: true });
+    const musicFill = createFill(-36);
+    const musicKnob = createKnob(-36).setInteractive({ useHandCursor: true, draggable: true });
+    const sfxTrack = createTrack(14).setInteractive({ useHandCursor: true });
+    const sfxFill = createFill(14);
+    const sfxKnob = createKnob(14).setInteractive({ useHandCursor: true, draggable: true });
+    const onOffButton = this.add
+      .rectangle(0, 62, 162, 36, 0x1b5260, 0.95)
+      .setStrokeStyle(1, 0x94d8e6, 0.9)
+      .setInteractive({ useHandCursor: true });
+    const onOffLabel = this.add
+      .text(0, 62, "SOUND: ON", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "18px",
+        color: "#eaffff",
+        stroke: "#042028",
+        strokeThickness: 3,
+        letterSpacing: 1
+      })
+      .setOrigin(0.5);
+
+    panel.add([
+      panelBg,
+      panelTitle,
+      musicLabel,
+      sfxLabel,
+      musicTrack,
+      musicFill,
+      musicKnob,
+      sfxTrack,
+      sfxFill,
+      sfxKnob,
+      onOffButton,
+      onOffLabel
+    ]);
+
+    button.on("pointerover", () => {
+      buttonBackdrop.setFillStyle(0x0d3442, 0.95);
+      buttonIcon.setScale(1.08);
+    });
+    button.on("pointerout", () => {
+      buttonBackdrop.setFillStyle(0x09222c, 0.9);
+      buttonIcon.setScale(1);
+    });
+    button.on("pointerup", () => {
+      const nextVisible = !panel.visible;
+      panel.setVisible(nextVisible);
+      this.tweens.add({
+        targets: panel,
+        alpha: nextVisible ? 1 : 0,
+        duration: 150,
+        ease: "Quad.Out",
+        onComplete: () => {
+          if (!nextVisible) {
+            panel.setVisible(false);
+          }
+        }
+      });
+    });
+
+    const toVolumeFromLocalX = (localX) => Phaser.Math.Clamp((localX - trackX) / trackWidth, 0, 1);
+    const applyMusicVolume = (volume) => {
+      updateAudioSettings(this.registry, { musicVolume: volume });
+      applyMasterMute(this);
+      this.updateAudioControlsView();
+      const bgMusic = this.sound.get("bg-music");
+      if (bgMusic) {
+        bgMusic.setVolume(0.4 * getAudioSettings(this.registry).musicVolume);
+      }
+    };
+    const applySfxVolume = (volume) => {
+      updateAudioSettings(this.registry, { sfxVolume: volume });
+      applyMasterMute(this);
+      this.updateAudioControlsView();
+    };
+    const handleTrackPointer = (pointer, callback) => {
+      const local = panel.getLocalPoint(pointer.worldX, pointer.worldY);
+      callback(toVolumeFromLocalX(local.x));
+    };
+
+    musicTrack.on("pointerdown", (pointer) => handleTrackPointer(pointer, applyMusicVolume));
+    sfxTrack.on("pointerdown", (pointer) => handleTrackPointer(pointer, applySfxVolume));
+    this.input.setDraggable(musicKnob, true);
+    this.input.setDraggable(sfxKnob, true);
+    musicKnob.on("drag", (pointer) => {
+      const local = panel.getLocalPoint(pointer.worldX, pointer.worldY);
+      applyMusicVolume(toVolumeFromLocalX(local.x));
+    });
+    sfxKnob.on("drag", (pointer) => {
+      const local = panel.getLocalPoint(pointer.worldX, pointer.worldY);
+      applySfxVolume(toVolumeFromLocalX(local.x));
+    });
+    onOffButton.on("pointerup", () => {
+      const settings = getAudioSettings(this.registry);
+      updateAudioSettings(this.registry, { enabled: !settings.enabled });
+      applyMasterMute(this);
+      this.updateAudioControlsView();
+      const bgMusic = this.sound.get("bg-music");
+      if (bgMusic) {
+        bgMusic.setVolume(0.4 * getAudioSettings(this.registry).musicVolume);
+      }
+    });
+
+    this.audioControls = {
+      panel,
+      button,
+      musicFill,
+      musicKnob,
+      sfxFill,
+      sfxKnob,
+      onOffButton,
+      onOffLabel,
+      trackX,
+      trackWidth
+    };
+    this.updateAudioControlsView();
+  }
+
+  updateAudioControlsView() {
+    if (!this.audioControls) {
+      return;
+    }
+
+    const settings = getAudioSettings(this.registry);
+    const { musicFill, musicKnob, sfxFill, sfxKnob, onOffButton, onOffLabel, trackX, trackWidth } = this.audioControls;
+    const musicWidth = Math.max(4, trackWidth * settings.musicVolume);
+    const sfxWidth = Math.max(4, trackWidth * settings.sfxVolume);
+    musicFill.width = musicWidth;
+    sfxFill.width = sfxWidth;
+    musicKnob.x = trackX + trackWidth * settings.musicVolume;
+    sfxKnob.x = trackX + trackWidth * settings.sfxVolume;
+    onOffButton.setFillStyle(settings.enabled ? 0x1b5260 : 0x5a2626, 0.95);
+    onOffLabel.setText(settings.enabled ? "SOUND: ON" : "SOUND: OFF");
+    onOffLabel.setColor(settings.enabled ? "#eaffff" : "#ffd4d4");
   }
 
   createActionButton(x, y, width, height, label, tone) {

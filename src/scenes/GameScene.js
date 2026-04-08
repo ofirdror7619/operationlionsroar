@@ -17,7 +17,6 @@ import {
   BASE_ENEMY_AIM_DURATION_MS,
   BASE_FIRE_COOLDOWN_MS,
   CERAMIC_VEST_DAMAGE_MULTIPLIER,
-  COMBO_RESET_WINDOW_MS,
   DEFAULT_MAG_MODE_DURATION_MS,
   ENEMY_FIRE_DAMAGE,
   GRENADE_ENEMY_FIRE_DAMAGE,
@@ -51,6 +50,13 @@ import {
   RETRY_BUTTON_BASE_TINT,
   RETRY_BUTTON_GLOW_TINT,
   RETRY_BUTTON_HOVER_TINT,
+  SCREEN_CHROMATIC_ABERRATION_ALPHA_BASE,
+  SCREEN_CHROMATIC_ABERRATION_ALPHA_SWAY,
+  SCREEN_CHROMATIC_ABERRATION_OFFSET_MAX,
+  SCREEN_GRAIN_ALPHA_BASE,
+  SCREEN_GRAIN_ALPHA_SWAY,
+  SCREEN_LIGHT_FLICKER_ALPHA_BASE,
+  SCREEN_LIGHT_FLICKER_ALPHA_SWAY,
   TAVOR_AIM_ASSIST_RADIUS,
   UI_DISPLAY_FONT,
   WEAPON_AIM_FOLLOW_ANGLE_MAX,
@@ -59,6 +65,10 @@ import {
   WEAPON_AIM_FOLLOW_Y_MAX,
   WEAPON_BOTTOM_CROP_PX,
   WEAPON_GRENADE_ANIM_FPS,
+  WEAPON_IDLE_BREATH_SPEED,
+  WEAPON_IDLE_SWAY_ANGLE_MAX,
+  WEAPON_IDLE_SWAY_X_MAX,
+  WEAPON_IDLE_SWAY_Y_MAX,
   WEAPON_LEFT_CROP_PX,
   WEAPON_MUZZLE_OFFSET_X,
   WEAPON_MUZZLE_OFFSET_Y,
@@ -67,6 +77,14 @@ import {
   WEAPON_SOURCE_FRAME_HEIGHT,
   WEAPON_SOURCE_FRAME_WIDTH
 } from "../game/gameplayTuning";
+import {
+  applyMasterMute,
+  ensureAudioSettings,
+  getAudioSettings,
+  getMusicOutputVolume,
+  getSfxOutputVolume,
+  updateAudioSettings
+} from "../game/audioSettings";
 
 export class GameScene extends Phaser.Scene {
   constructor() {
@@ -109,6 +127,8 @@ export class GameScene extends Phaser.Scene {
     this.crosshairHitMarker = null;
     this.crosshairReticle = null;
     this.crosshairBaseScale = 1;
+    this.crosshairSpread = 0;
+    this.crosshairHitFlashUntilMs = 0;
     this.ammoText = null;
     this.ammoSegments = [];
     this.grenadeText = null;
@@ -136,6 +156,10 @@ export class GameScene extends Phaser.Scene {
     this.failGlitchGhostRight = null;
     this.abortButton = null;
     this.abortButtonLabel = null;
+    this.audioButton = null;
+    this.audioButtonLabel = null;
+    this.audioPanel = null;
+    this.audioControls = null;
     this.abortConfirmOverlay = null;
     this.abortConfirmFrame = null;
     this.abortConfirmPanel = null;
@@ -151,8 +175,18 @@ export class GameScene extends Phaser.Scene {
     this.abortConfirmLeaveGlow = null;
     this.abortConfirmLeaveLabel = null;
     this.backgroundImage = null;
+    this.backgroundBaseX = 0;
+    this.backgroundBaseY = 0;
+    this.backgroundBaseScaleX = 1;
+    this.backgroundBaseScaleY = 1;
+    this.backgroundBreathPhase = 0;
+    this.lastBackgroundHitAtMs = -99999;
     this.failBackgroundBlurFx = null;
     this.grainOverlay = null;
+    this.lightFlickerOverlay = null;
+    this.chromaticAberrationRed = null;
+    this.chromaticAberrationCyan = null;
+    this.screenFxPhase = 0;
     this.cameraMicroShakeEvent = null;
     this.ambientSmokeLayers = [];
     this.ambientDustParticles = null;
@@ -162,9 +196,6 @@ export class GameScene extends Phaser.Scene {
     this.isLowAmmoBlinkActive = false;
     this.lowHpPulseTween = null;
     this.lowAmmoBlinkTween = null;
-    this.comboText = null;
-    this.comboCount = 0;
-    this.lastKillAtMs = -99999;
     this.headshotText = null;
     this.reloadWarningText = null;
     this.killFeedTexts = [];
@@ -190,6 +221,7 @@ export class GameScene extends Phaser.Scene {
     this.weaponRecoilX = 0;
     this.weaponRecoilY = 0;
     this.weaponRecoilAngle = 0;
+    this.weaponBreathPhase = 0;
     this.weaponAmmoById = {};
     this.hasContinuedAfterMissionComplete = false;
     this.levelElapsedMs = 0;
@@ -207,6 +239,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
+    ensureAudioSettings(this.registry);
+    applyMasterMute(this);
     this.startBackgroundMusic();
 
     this.state = new GameState();
@@ -236,6 +270,7 @@ export class GameScene extends Phaser.Scene {
     this.backgroundImage = this.add
       .image(this.playWidth / 2, this.scale.height / 2, this.getMissionBackgroundKey())
       .setDisplaySize(this.playWidth, this.scale.height);
+    this.cacheBackgroundBreathingBase();
     this.createWeaponView();
     this.applyCurrentWeaponAmmoState();
     this.createCrosshair();
@@ -256,8 +291,10 @@ export class GameScene extends Phaser.Scene {
 
     this.createObjectiveBanner();
     this.createAbortButton();
+
     this.createPlayerPowerIndicators?.();
     this.createForegroundVignette();
+    this.createScreenFxOverlays();
     this.createWorldAtmosphere();
     this.createGrainOverlay();
     this.startAmbientCameraShake();
@@ -267,11 +304,11 @@ export class GameScene extends Phaser.Scene {
     this.startHudBreathing();
 
     this.magFireSound = this.sound.add("mag-fire", {
-      volume: 0.55,
+      volume: getSfxOutputVolume(this.registry, 0.55),
       loop: true
     });
     this.tavorFireSound = this.sound.add("tavor-fire", {
-      volume: 0.55
+      volume: getSfxOutputVolume(this.registry, 0.55)
     });
 
     const initialPhaseConfig = this.getCurrentPhaseConfig();
@@ -300,6 +337,7 @@ export class GameScene extends Phaser.Scene {
               ? GRENADE_ENEMY_FIRE_DAMAGE
               : ENEMY_FIRE_DAMAGE;
           const appliedDamage = this.getIncomingDamageAfterArmor(rawDamage);
+          this.lastBackgroundHitAtMs = this.time.now;
           this.state.applyDamage(appliedDamage);
           this.recordDamageTaken(appliedDamage);
           this.cameras.main.shake(120, 0.003);
@@ -325,6 +363,9 @@ export class GameScene extends Phaser.Scene {
       if (this.isAbortConfirmVisible()) {
         return;
       }
+      if (this.isPointerOnAudioControls(pointer)) {
+        return;
+      }
 
       if (this.gameOver) {
         return;
@@ -347,6 +388,10 @@ export class GameScene extends Phaser.Scene {
       this.stopMagFireSound();
     });
     this.input.keyboard.on("keydown-ESC", () => {
+      if (this.audioPanel?.visible) {
+        this.toggleAudioPanel(false);
+        return;
+      }
       if (this.isAbortConfirmVisible()) {
         this.hideAbortConfirmScreen();
         return;
@@ -356,6 +401,9 @@ export class GameScene extends Phaser.Scene {
     });
     this.input.on("wheel", (_pointer, _gameObjects, _deltaX, deltaY) => {
       if (this.gameOver || this.levelComplete || this.isAbortConfirmVisible()) {
+        return;
+      }
+      if (this.audioPanel?.visible) {
         return;
       }
 
@@ -493,8 +541,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_time, delta) {
-    this.updateComboWindow();
     if (this.gameOver || this.levelComplete || this.isAbortConfirmVisible()) {
+      this.resetBackgroundBreathingTransform();
       return;
     }
 
@@ -1208,7 +1256,7 @@ export class GameScene extends Phaser.Scene {
     this.input.setDefaultCursor("auto");
     this.stopMagFireSound();
     if (this.isHostageProtectionLevel()) {
-      this.backgroundImage?.setTexture("bg-level4-failed");
+      this.applyMissionBackgroundTexture("bg-level4-failed");
       this.showHostageEndStateUi("MISSION FAILED");
       return;
     }
@@ -1235,7 +1283,7 @@ export class GameScene extends Phaser.Scene {
     this.input.setDefaultCursor("auto");
     this.stopMagFireSound();
     if (this.isHostageProtectionLevel()) {
-      this.backgroundImage?.setTexture("bg-level4-success");
+      this.applyMissionBackgroundTexture("bg-level4-success");
       this.showHostageEndStateUi("MISSION SUCCESS", {
         showRetry: false,
         showContinueHint: true
@@ -1244,7 +1292,6 @@ export class GameScene extends Phaser.Scene {
     }
     this.hideMissionFailScreen?.();
     this.updateReloadWarning(1);
-    this.comboText?.setVisible(false);
     this.lastAfterActionReport = this.buildAfterActionReport();
     if (this.gameStatusText?.active) {
       this.gameStatusText
@@ -1350,6 +1397,17 @@ export class GameScene extends Phaser.Scene {
 
   getMissionBackgroundKey() {
     return this.isHostageProtectionLevel() ? "bg-level4" : "bg";
+  }
+
+  applyMissionBackgroundTexture(textureKey) {
+    if (!this.backgroundImage?.active) {
+      return;
+    }
+
+    this.backgroundImage
+      .setTexture(textureKey)
+      .setDisplaySize(this.playWidth, this.scale.height);
+    this.cacheBackgroundBreathingBase();
   }
 
   getSpawnPointsForCurrentLevel() {
@@ -1648,19 +1706,19 @@ export class GameScene extends Phaser.Scene {
         panelY + panelHeight * 0.5,
         UI_LAYOUT.objectiveSweepWidth,
         panelHeight - 14,
-        0x7ff9ff,
-        0.075
+        0xe7bb6b,
+        0.08
       )
       .setDepth(96)
       .setBlendMode(Phaser.BlendModes.ADD);
 
     this.objectiveText = this.add.text(panelCenterX, panelY + UI_LAYOUT.objectiveTextTopInset, this.getLevelObjectiveText(), {
       fontFamily: UI_DISPLAY_FONT,
-      fontSize: "30px",
-      color: "#dffcff",
-      stroke: "#07161a",
+      fontSize: "29px",
+      color: "#efe4c6",
+      stroke: "#171108",
       strokeThickness: 5,
-      letterSpacing: 1
+      letterSpacing: 2
     })
       .setOrigin(0.5, 0)
       .setDepth(97);
@@ -1720,8 +1778,8 @@ export class GameScene extends Phaser.Scene {
     const completeText = this.add.text(this.playWidth / 2, 80, "OBJECTIVE COMPLETE!", {
       fontFamily: UI_DISPLAY_FONT,
       fontSize: "40px",
-      color: "#8ff4e5",
-      stroke: "#06221f",
+      color: "#eec16b",
+      stroke: "#2f1c0a",
       strokeThickness: 6,
       letterSpacing: 2
     })
@@ -1811,7 +1869,7 @@ export class GameScene extends Phaser.Scene {
     const health = Math.floor(this.state.hp);
     if (this.ammoText?.active) {
       this.ammoText.setText(this.formatAmmoCounter(ammo));
-      this.ammoText.setColor(ammo <= 20 ? "#ff5f72" : "#e4f2ff");
+      this.ammoText.setColor(ammo <= 20 ? "#ff7a64" : "#f0e6d2");
       this.updateAmmoSegments(ammo);
       if (this.lastAmmoValue !== ammo) {
         this.pulseHudNode(this.ammoText, 1.14);
@@ -1849,7 +1907,7 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setAlpha(0.92);
     const healthSweep = this.add
-      .rectangle(panelX - 86, y, 72, panelHeight - 12, 0x86f8ff, 0.07)
+      .rectangle(panelX - 86, y, 72, panelHeight - 12, 0xe7bf73, 0.055)
       .setDepth(261)
       .setBlendMode(Phaser.BlendModes.ADD);
     this.tweens.add({
@@ -1871,12 +1929,12 @@ export class GameScene extends Phaser.Scene {
     for (let i = 0; i < HUD_HEALTH_SEGMENTS; i += 1) {
       const x = startX + i * (segmentWidth + gap);
       const base = this.add
-        .rectangle(x, y, segmentWidth, segmentHeight, 0x15222d, 0.9)
-        .setStrokeStyle(1, 0x1b3b53, 0.95)
+        .rectangle(x, y, segmentWidth, segmentHeight, 0x1a1916, 0.88)
+        .setStrokeStyle(1, 0x423924, 0.9)
         .setDepth(262)
         .setOrigin(0, 0.5);
       const glow = this.add
-        .rectangle(x + segmentWidth * 0.5, y, segmentWidth + 8, segmentHeight + 10, 0x82ffb4, 0)
+        .rectangle(x + segmentWidth * 0.5, y, segmentWidth + 8, segmentHeight + 10, 0xffc876, 0)
         .setDepth(261)
         .setBlendMode(Phaser.BlendModes.ADD);
       this.hudIntroNodes.push(base, glow);
@@ -1898,8 +1956,8 @@ export class GameScene extends Phaser.Scene {
       const isActive = index < activeSegments;
       const t = HUD_HEALTH_SEGMENTS <= 1 ? 1 : index / (HUD_HEALTH_SEGMENTS - 1);
       const activeColor = Phaser.Display.Color.Interpolate.ColorWithColor(
-        new Phaser.Display.Color(255, 72, 96),
-        new Phaser.Display.Color(88, 255, 156),
+        new Phaser.Display.Color(216, 79, 68),
+        new Phaser.Display.Color(133, 197, 112),
         100,
         Math.round(t * 100)
       );
@@ -1909,10 +1967,10 @@ export class GameScene extends Phaser.Scene {
         Math.min(255, activeColor.g + 26),
         Math.min(255, activeColor.b + 26)
       );
-      segmentNode.base.setFillStyle(isActive ? activeColorInt : 0x15222d, isActive ? 0.95 : 0.72);
-      segmentNode.base.setStrokeStyle(1, isActive ? strokeColor : 0x1b3b53, isActive ? 0.95 : 0.7);
+      segmentNode.base.setFillStyle(isActive ? activeColorInt : 0x1a1916, isActive ? 0.95 : 0.68);
+      segmentNode.base.setStrokeStyle(1, isActive ? strokeColor : 0x423924, isActive ? 0.95 : 0.75);
       segmentNode.glow.setFillStyle(activeColorInt, 1);
-      segmentNode.glow.setAlpha(isActive ? 0.28 : 0);
+      segmentNode.glow.setAlpha(isActive ? 0.21 : 0);
       if (this.lastHealthSegmentCount >= 0 && activeSegments !== this.lastHealthSegmentCount && isActive) {
         this.pulseHudNode(segmentNode.base, 1.2);
       }
@@ -1934,7 +1992,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(260)
       .setOrigin(0.5);
     const ammoSweep = this.add
-      .rectangle(ammoPanelX - 108, y, 84, ammoPanelHeight - 12, 0x86f8ff, 0.07)
+      .rectangle(ammoPanelX - 108, y, 84, ammoPanelHeight - 12, 0xe7bf73, 0.06)
       .setDepth(262)
       .setBlendMode(Phaser.BlendModes.ADD);
     this.tweens.add({
@@ -1952,8 +2010,8 @@ export class GameScene extends Phaser.Scene {
       .text(54, y, "100", {
         fontFamily: UI_DISPLAY_FONT,
         fontSize: "32px",
-        color: "#eaffff",
-        stroke: "#061418",
+        color: "#f0e6d2",
+        stroke: "#1a130a",
         strokeThickness: 5,
         letterSpacing: 2
       })
@@ -1971,7 +2029,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(260)
       .setOrigin(0.5);
     this.grenadeSweep = this.add
-      .rectangle(grenadeX - 56, y, 66, grenadePanelHeight - 12, 0x86f8ff, 0.065)
+      .rectangle(grenadeX - 56, y, 66, grenadePanelHeight - 12, 0xe7bf73, 0.055)
       .setDepth(262)
       .setBlendMode(Phaser.BlendModes.ADD);
     this.tweens.add({
@@ -1994,8 +2052,8 @@ export class GameScene extends Phaser.Scene {
       .text(grenadeValueX, grenadeValueY, "3", {
         fontFamily: UI_DISPLAY_FONT,
         fontSize: "28px",
-        color: "#eaffff",
-        stroke: "#061418",
+        color: "#f0e6d2",
+        stroke: "#1a130a",
         strokeThickness: 4,
         letterSpacing: 2
       })
@@ -2046,12 +2104,12 @@ export class GameScene extends Phaser.Scene {
     for (let i = 0; i < HUD_AMMO_SEGMENTS; i += 1) {
       const x = startX + i * (segmentWidth + gap);
       const glow = this.add
-        .rectangle(x + segmentWidth * 0.5, y, segmentWidth + 8, segmentHeight + 10, 0x7af0ff, 0)
+        .rectangle(x + segmentWidth * 0.5, y, segmentWidth + 8, segmentHeight + 10, 0xffca78, 0)
         .setDepth(260)
         .setBlendMode(Phaser.BlendModes.ADD);
       const base = this.add
-        .rectangle(x, y, segmentWidth, segmentHeight, 0x75cfff, 0.95)
-        .setStrokeStyle(1, 0x0c3250, 0.95)
+        .rectangle(x, y, segmentWidth, segmentHeight, 0x1d1b17, 0.92)
+        .setStrokeStyle(1, 0x413823, 0.92)
         .setDepth(261)
         .setOrigin(0, 0.5);
       this.hudIntroNodes.push(base, glow);
@@ -2073,8 +2131,8 @@ export class GameScene extends Phaser.Scene {
       const isActive = index < activeSegments;
       const t = HUD_AMMO_SEGMENTS <= 1 ? 1 : index / (HUD_AMMO_SEGMENTS - 1);
       const activeColor = Phaser.Display.Color.Interpolate.ColorWithColor(
-        new Phaser.Display.Color(255, 72, 96),
-        new Phaser.Display.Color(88, 255, 156),
+        new Phaser.Display.Color(219, 81, 69),
+        new Phaser.Display.Color(133, 196, 112),
         100,
         Math.round(t * 100)
       );
@@ -2084,10 +2142,10 @@ export class GameScene extends Phaser.Scene {
         Math.min(255, activeColor.g + 26),
         Math.min(255, activeColor.b + 26)
       );
-      segmentNode.base.setFillStyle(isActive ? activeColorInt : 0x203443, isActive ? 0.95 : 0.55);
-      segmentNode.base.setStrokeStyle(1, isActive ? strokeColor : 0x14212c, isActive ? 0.95 : 0.85);
+      segmentNode.base.setFillStyle(isActive ? activeColorInt : 0x1d1b17, isActive ? 0.95 : 0.52);
+      segmentNode.base.setStrokeStyle(1, isActive ? strokeColor : 0x413823, isActive ? 0.95 : 0.82);
       segmentNode.glow.setFillStyle(activeColorInt, 1);
-      segmentNode.glow.setAlpha(isActive ? 0.24 : 0);
+      segmentNode.glow.setAlpha(isActive ? 0.2 : 0);
       if (this.lastAmmoSegmentCount >= 0 && activeSegments !== this.lastAmmoSegmentCount && isActive) {
         this.pulseHudNode(segmentNode.base, 1.22);
       }
@@ -2112,8 +2170,8 @@ export class GameScene extends Phaser.Scene {
       .text(startX + HUD_GRENADE_ICON_SLOTS * gap + 2, y, "", {
         fontFamily: UI_DISPLAY_FONT,
         fontSize: "20px",
-        color: "#c1f2ff",
-        stroke: "#061418",
+        color: "#dfbf82",
+        stroke: "#1a130a",
         strokeThickness: 3
       })
       .setDepth(264)
@@ -2132,7 +2190,7 @@ export class GameScene extends Phaser.Scene {
     this.grenadeIcons.forEach((icon, index) => {
       const isActive = index < activeIcons;
       icon.setAlpha(isActive ? 1 : 0.28);
-      icon.setTint(isActive ? 0xffffff : 0x456072);
+      icon.setTint(isActive ? 0xf2e0bc : 0x584b35);
       if (this.lastGrenadesValue >= 0 && this.lastGrenadesValue !== clamped && isActive) {
         this.pulseHudNode(icon, 1.28);
       }
@@ -2197,49 +2255,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   registerKillFeedback({ isHeadshot = false, killSource = "M-203" } = {}) {
-    const now = this.time.now;
-    const withinComboWindow = now - this.lastKillAtMs <= COMBO_RESET_WINDOW_MS;
-    this.comboCount = withinComboWindow ? this.comboCount + 1 : 1;
-    this.lastKillAtMs = now;
-
-    if (this.comboText?.active && this.comboCount >= 2) {
-      this.comboText
-        .setText(`COMBO x${this.comboCount}`)
-        .setVisible(true)
-        .setAlpha(1)
-        .setScale(1);
-      this.pulseHudNode(this.comboText, 1.24);
-    }
-
     if (isHeadshot) {
       this.showHeadshotIndicator();
     }
 
     this.addKillFeedEntry(isHeadshot ? `HEADSHOT (${killSource})` : `ENEMY DOWN (${killSource})`);
-  }
-
-  updateComboWindow() {
-    if (!this.comboText?.active || this.comboCount <= 0) {
-      return;
-    }
-
-    if (this.time.now - this.lastKillAtMs <= COMBO_RESET_WINDOW_MS) {
-      return;
-    }
-
-    this.comboCount = 0;
-    this.tweens.add({
-      targets: this.comboText,
-      alpha: 0,
-      y: this.comboText.y - 10,
-      duration: 220,
-      onComplete: () => {
-        if (this.comboText?.active) {
-          this.comboText.setVisible(false);
-          this.comboText.setY(94);
-        }
-      }
-    });
   }
 
   showHeadshotIndicator() {
@@ -2330,18 +2350,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   createPlayerPowerIndicators() {
-    this.comboText = this.add.text(this.playWidth / 2, 94, "", {
-      fontFamily: UI_DISPLAY_FONT,
-      fontSize: "34px",
-      color: "#fff2a1",
-      stroke: "#3c2904",
-      strokeThickness: 6,
-      letterSpacing: 3
-    })
-      .setOrigin(0.5, 0)
-      .setDepth(301)
-      .setVisible(false);
-
     this.headshotText = this.add.text(this.playWidth / 2, this.scale.height * 0.54, "HEADSHOT!", {
       fontFamily: UI_DISPLAY_FONT,
       fontSize: "52px",
@@ -2366,7 +2374,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(304)
       .setVisible(false);
 
-    this.hudIntroNodes.push(this.comboText, this.reloadWarningText);
+    this.hudIntroNodes.push(this.reloadWarningText);
   }
 
   updateReloadWarning(ammo) {
@@ -2522,7 +2530,6 @@ export class GameScene extends Phaser.Scene {
   triggerMissionFailedCinematic() {
     this.tweens.killTweensOf(this.reloadWarningText);
     this.reloadWarningText?.setVisible(false);
-    this.comboText?.setVisible(false);
     this.failOverlay?.setVisible(true).setAlpha(0);
     this.failBlurLayers.forEach((layer, index) => {
       layer.setVisible(true).setAlpha(0).setScale(1.05 + index * 0.015);
@@ -2662,8 +2669,8 @@ export class GameScene extends Phaser.Scene {
       .text(x, y, "ABORT", {
         fontFamily: UI_DISPLAY_FONT,
         fontSize: "26px",
-        color: "#dffcff",
-        stroke: "#07161a",
+        color: "#efe0bf",
+        stroke: "#171108",
         strokeThickness: 4,
         letterSpacing: 2
       })
@@ -2671,7 +2678,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(307);
 
     this.abortButton.on("pointerover", () => {
-      this.abortButton?.setTint(0xd7fbff).setAlpha(1);
+      this.abortButton?.setTint(0xe3c48c).setAlpha(1);
     });
 
     this.abortButton.on("pointerout", () => {
@@ -2679,6 +2686,245 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.abortButton.on("pointerup", () => this.abortMission());
+  }
+
+  createAudioControls() {
+    const x = this.scale.width - 16;
+    const y = 34;
+    const panelWidth = 294;
+    const panelHeight = 176;
+    const panelX = this.scale.width - panelWidth * 0.5 - 18;
+    const panelY = 152;
+
+    const audioButtonBackdrop = this.add
+      .circle(x, y, 15, 0x09222c, 0.9)
+      .setStrokeStyle(2, 0x88dce8, 0.9)
+      .setDepth(306)
+      .setAlpha(0.96);
+    const audioButtonIcon = this.add
+      .text(x, y, "\u2699", {
+        fontFamily: UI_DISPLAY_FONT,
+        fontSize: "20px",
+        color: "#dff3ff",
+        stroke: "#09151e",
+        strokeThickness: 3
+      })
+      .setOrigin(0.5)
+      .setDepth(307);
+    this.audioButton = this.add
+      .circle(x, y, 18, 0xffffff, 0.001)
+      .setDepth(308)
+      .setInteractive({ useHandCursor: true });
+    this.audioButton.input.cursor = "pointer";
+    this.audioPanel = this.add.container(panelX, panelY).setDepth(330).setVisible(false).setAlpha(0);
+
+    const panelBg = this.add
+      .rectangle(0, 0, panelWidth, panelHeight, 0x06131a, 0.95)
+      .setStrokeStyle(2, 0x7cc8dc, 0.72);
+    const panelTitle = this.add.text(0, -panelHeight * 0.5 + 16, "AUDIO SETTINGS", {
+      fontFamily: UI_DISPLAY_FONT,
+      fontSize: "18px",
+      color: "#e6fbff",
+      stroke: "#03171e",
+      strokeThickness: 3,
+      letterSpacing: 1
+    }).setOrigin(0.5, 0);
+    const musicLabel = this.add.text(-panelWidth * 0.5 + 18, -34, "Music", {
+      fontFamily: UI_DISPLAY_FONT,
+      fontSize: "18px",
+      color: "#bde9f5",
+      stroke: "#04151b",
+      strokeThickness: 2
+    }).setOrigin(0, 0.5);
+    const sfxLabel = this.add.text(-panelWidth * 0.5 + 18, 12, "SFX", {
+      fontFamily: UI_DISPLAY_FONT,
+      fontSize: "18px",
+      color: "#bde9f5",
+      stroke: "#04151b",
+      strokeThickness: 2
+    }).setOrigin(0, 0.5);
+    const trackWidth = 156;
+    const trackX = 26;
+    const createTrack = (yPos) => this.add.rectangle(trackX, yPos, trackWidth, 8, 0x163640, 0.9)
+      .setOrigin(0, 0.5)
+      .setStrokeStyle(1, 0x6ea6b6, 0.8)
+      .setInteractive({ useHandCursor: true });
+    const createFill = (yPos) => this.add.rectangle(trackX, yPos, trackWidth, 8, 0x7fe5f7, 0.92).setOrigin(0, 0.5);
+    const createKnob = (yPos) => this.add.circle(trackX, yPos, 8, 0xeaffff, 1)
+      .setStrokeStyle(2, 0x2a6d7b, 1)
+      .setInteractive({ useHandCursor: true, draggable: true });
+
+    const musicTrack = createTrack(-34);
+    const musicFill = createFill(-34);
+    const musicKnob = createKnob(-34);
+    const sfxTrack = createTrack(12);
+    const sfxFill = createFill(12);
+    const sfxKnob = createKnob(12);
+    const onOffButton = this.add
+      .rectangle(0, 60, 154, 34, 0x1b5260, 0.95)
+      .setStrokeStyle(1, 0x94d8e6, 0.9)
+      .setInteractive({ useHandCursor: true });
+    const onOffLabel = this.add.text(0, 60, "SOUND: ON", {
+      fontFamily: UI_DISPLAY_FONT,
+      fontSize: "16px",
+      color: "#eaffff",
+      stroke: "#042028",
+      strokeThickness: 3,
+      letterSpacing: 1
+    }).setOrigin(0.5);
+
+    this.audioPanel.add([
+      panelBg,
+      panelTitle,
+      musicLabel,
+      sfxLabel,
+      musicTrack,
+      musicFill,
+      musicKnob,
+      sfxTrack,
+      sfxFill,
+      sfxKnob,
+      onOffButton,
+      onOffLabel
+    ]);
+
+    const toVolumeFromLocalX = (localX) => Phaser.Math.Clamp((localX - trackX) / trackWidth, 0, 1);
+    const applyMusicVolume = (volume) => {
+      updateAudioSettings(this.registry, { musicVolume: volume });
+      this.applyAudioSettings();
+    };
+    const applySfxVolume = (volume) => {
+      updateAudioSettings(this.registry, { sfxVolume: volume });
+      this.applyAudioSettings();
+    };
+    const handleTrackPointer = (pointer, callback) => {
+      const local = this.audioPanel.getLocalPoint(pointer.worldX, pointer.worldY);
+      callback(toVolumeFromLocalX(local.x));
+    };
+
+    musicTrack.on("pointerdown", (pointer) => handleTrackPointer(pointer, applyMusicVolume));
+    sfxTrack.on("pointerdown", (pointer) => handleTrackPointer(pointer, applySfxVolume));
+    this.input.setDraggable(musicKnob, true);
+    this.input.setDraggable(sfxKnob, true);
+    musicKnob.on("drag", (pointer) => {
+      const local = this.audioPanel.getLocalPoint(pointer.worldX, pointer.worldY);
+      applyMusicVolume(toVolumeFromLocalX(local.x));
+    });
+    sfxKnob.on("drag", (pointer) => {
+      const local = this.audioPanel.getLocalPoint(pointer.worldX, pointer.worldY);
+      applySfxVolume(toVolumeFromLocalX(local.x));
+    });
+    onOffButton.on("pointerup", () => {
+      const settings = getAudioSettings(this.registry);
+      updateAudioSettings(this.registry, { enabled: !settings.enabled });
+      this.applyAudioSettings();
+    });
+
+    this.audioButton.on("pointerover", () => {
+      audioButtonBackdrop.setFillStyle(0x0d3442, 0.95);
+      audioButtonIcon.setScale(1.08);
+    });
+    this.audioButton.on("pointerout", () => {
+      audioButtonBackdrop.setFillStyle(0x09222c, 0.9);
+      audioButtonIcon.setScale(1);
+    });
+    this.audioButton.on("pointerup", () => this.toggleAudioPanel());
+
+    this.audioControls = {
+      musicFill,
+      musicKnob,
+      sfxFill,
+      sfxKnob,
+      onOffButton,
+      onOffLabel,
+      trackX,
+      trackWidth,
+      panelWidth,
+      panelHeight
+    };
+    this.applyAudioSettings();
+  }
+
+  toggleAudioPanel(forceVisible = null) {
+    if (!this.audioPanel) {
+      return;
+    }
+
+    const nextVisible = forceVisible === null ? !this.audioPanel.visible : forceVisible;
+    if (nextVisible) {
+      this.audioPanel.setVisible(true);
+    }
+
+    this.tweens.add({
+      targets: this.audioPanel,
+      alpha: nextVisible ? 1 : 0,
+      duration: 130,
+      ease: "Quad.Out",
+      onComplete: () => {
+        if (!nextVisible && this.audioPanel?.active) {
+          this.audioPanel.setVisible(false);
+        }
+      }
+    });
+  }
+
+  applyAudioSettings() {
+    applyMasterMute(this);
+    const settings = getAudioSettings(this.registry);
+    const music = this.sound.get("bg-music");
+    if (music) {
+      music.setVolume(0.4 * settings.musicVolume);
+    }
+    this.magFireSound?.setVolume(getSfxOutputVolume(this.registry, 0.55));
+    this.tavorFireSound?.setVolume(getSfxOutputVolume(this.registry, 0.55));
+    this.updateAudioControlsView();
+  }
+
+  updateAudioControlsView() {
+    if (!this.audioControls) {
+      return;
+    }
+
+    const settings = getAudioSettings(this.registry);
+    const {
+      musicFill,
+      musicKnob,
+      sfxFill,
+      sfxKnob,
+      onOffButton,
+      onOffLabel,
+      trackX,
+      trackWidth
+    } = this.audioControls;
+    musicFill.width = Math.max(4, trackWidth * settings.musicVolume);
+    sfxFill.width = Math.max(4, trackWidth * settings.sfxVolume);
+    musicKnob.x = trackX + trackWidth * settings.musicVolume;
+    sfxKnob.x = trackX + trackWidth * settings.sfxVolume;
+    onOffButton.setFillStyle(settings.enabled ? 0x1b5260 : 0x5a2626, 0.95);
+    onOffLabel.setText(settings.enabled ? "SOUND: ON" : "SOUND: OFF");
+    onOffLabel.setColor(settings.enabled ? "#eaffff" : "#ffd4d4");
+  }
+
+  isPointerOnAudioControls(pointer) {
+    if (!pointer) {
+      return false;
+    }
+
+    if (this.audioButton?.getBounds()?.contains(pointer.worldX, pointer.worldY)) {
+      return true;
+    }
+
+    if (!this.audioPanel?.visible || !this.audioControls) {
+      return false;
+    }
+
+    const panelBounds = new Phaser.Geom.Rectangle(
+      this.audioPanel.x - this.audioControls.panelWidth * 0.5,
+      this.audioPanel.y - this.audioControls.panelHeight * 0.5,
+      this.audioControls.panelWidth,
+      this.audioControls.panelHeight
+    );
+    return panelBounds.contains(pointer.worldX, pointer.worldY);
   }
 
   createAbortConfirmScreen() {
@@ -2698,20 +2944,20 @@ export class GameScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: false });
     this.abortConfirmFrame = this.add
       .rectangle(centerX, centerY, panelWidth + 20, panelHeight + 20, 0x05111a, 0.9)
-      .setStrokeStyle(3, 0x66d8ff, 0.72)
+      .setStrokeStyle(3, 0xc9aa72, 0.72)
       .setDepth(1601)
       .setVisible(false);
     this.abortConfirmPanel = this.add
       .rectangle(centerX, centerY, panelWidth, panelHeight, 0x081924, 0.97)
-      .setStrokeStyle(2, 0x2f92b8, 0.85)
+      .setStrokeStyle(2, 0x5f4c2f, 0.85)
       .setDepth(1602)
       .setVisible(false);
     this.abortConfirmTitle = this.add
       .text(centerX, centerY - 114, "ABORT MISSION?", {
         fontFamily: UI_DISPLAY_FONT,
         fontSize: "50px",
-        color: "#f2fdff",
-        stroke: "#061116",
+        color: "#f1e0bd",
+        stroke: "#181107",
         strokeThickness: 8,
         letterSpacing: 4
       })
@@ -2722,8 +2968,8 @@ export class GameScene extends Phaser.Scene {
       .text(centerX, centerY - 60, "Return to Operation Center?", {
         fontFamily: UI_DISPLAY_FONT,
         fontSize: "34px",
-        color: "#b8efff",
-        stroke: "#061116",
+        color: "#dccaa6",
+        stroke: "#181107",
         strokeThickness: 5,
         letterSpacing: 1
       })
@@ -2731,7 +2977,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(1603)
       .setVisible(false);
     this.abortConfirmDivider = this.add
-      .rectangle(centerX, centerY - 20, panelWidth - 104, 2, 0x59d4f4, 0.45)
+      .rectangle(centerX, centerY - 20, panelWidth - 104, 2, 0xcfac6f, 0.45)
       .setDepth(1603)
       .setVisible(false);
     this.abortConfirmBody = this.add
@@ -2739,8 +2985,8 @@ export class GameScene extends Phaser.Scene {
         fontFamily: UI_DISPLAY_FONT,
         fontSize: "26px",
         align: "center",
-        color: "#d1e2e8",
-        stroke: "#061116",
+        color: "#d9d1c3",
+        stroke: "#181107",
         strokeThickness: 4,
         letterSpacing: 1
       })
@@ -2751,7 +2997,7 @@ export class GameScene extends Phaser.Scene {
     this.abortConfirmStayGlow = this.add
       .image(centerX - buttonOffsetX, buttonY, "hud-counter-grenade-panel")
       .setDisplaySize(baseButtonWidth + 24, baseButtonHeight + 16)
-      .setTint(0x45cfff)
+      .setTint(0xdfbf84)
       .setAlpha(0)
       .setDepth(1603)
       .setVisible(false)
@@ -2759,7 +3005,7 @@ export class GameScene extends Phaser.Scene {
     this.abortConfirmStayButton = this.add
       .image(centerX - buttonOffsetX, buttonY, "hud-counter-grenade-panel")
       .setDisplaySize(baseButtonWidth, baseButtonHeight)
-      .setTint(0x1f8ba8)
+      .setTint(0x8e6d3a)
       .setDepth(1604)
       .setVisible(false)
       .setInteractive({ useHandCursor: true });
@@ -2767,8 +3013,8 @@ export class GameScene extends Phaser.Scene {
       .text(centerX - buttonOffsetX, buttonY, "STAY", {
         fontFamily: UI_DISPLAY_FONT,
         fontSize: "38px",
-        color: "#f2fdff",
-        stroke: "#06202a",
+        color: "#fff4dc",
+        stroke: "#2b1d08",
         strokeThickness: 5,
         letterSpacing: 4
       })
@@ -2807,12 +3053,12 @@ export class GameScene extends Phaser.Scene {
       if (!this.isAbortConfirmVisible()) {
         return;
       }
-      this.abortConfirmStayButton?.setTint(0x35b6da);
+      this.abortConfirmStayButton?.setTint(0xb48b4d);
       this.abortConfirmStayGlow?.setAlpha(0.48);
       this.abortConfirmStayLabel?.setScale(1.04);
     });
     this.abortConfirmStayButton.on("pointerout", () => {
-      this.abortConfirmStayButton?.setTint(0x1f8ba8);
+      this.abortConfirmStayButton?.setTint(0x8e6d3a);
       this.abortConfirmStayGlow?.setAlpha(0.22);
       this.abortConfirmStayLabel?.setScale(1);
     });
@@ -2873,8 +3119,8 @@ export class GameScene extends Phaser.Scene {
     this.abortConfirmSubtitle?.setVisible(true).setAlpha(0);
     this.abortConfirmBody?.setVisible(true).setAlpha(0);
     this.abortConfirmDivider?.setVisible(true).setAlpha(0);
-    this.abortConfirmStayGlow?.setVisible(true).setScale(0.98).setAlpha(0.16).setTint(0x45cfff);
-    this.abortConfirmStayButton?.setVisible(true).setScale(0.96).setAlpha(0).setTint(0x1f8ba8);
+    this.abortConfirmStayGlow?.setVisible(true).setScale(0.98).setAlpha(0.16).setTint(0xdfbf84);
+    this.abortConfirmStayButton?.setVisible(true).setScale(0.96).setAlpha(0).setTint(0x8e6d3a);
     this.abortConfirmStayLabel?.setVisible(true).setAlpha(0);
     this.abortConfirmLeaveGlow?.setVisible(true).setScale(0.98).setAlpha(0.14).setTint(0xff6c7b);
     this.abortConfirmLeaveButton?.setVisible(true).setScale(0.96).setAlpha(0).setTint(0x963948);
@@ -2924,7 +3170,7 @@ export class GameScene extends Phaser.Scene {
     this.abortConfirmBody?.setVisible(false).setAlpha(0);
     this.abortConfirmDivider?.setVisible(false).setAlpha(0);
     this.abortConfirmStayGlow?.setVisible(false).setAlpha(0).setScale(1);
-    this.abortConfirmStayButton?.setVisible(false).setAlpha(0).setScale(1).setTint(0x1f8ba8);
+    this.abortConfirmStayButton?.setVisible(false).setAlpha(0).setScale(1).setTint(0x8e6d3a);
     this.abortConfirmStayLabel?.setVisible(false).setAlpha(0).setScale(1);
     this.abortConfirmLeaveGlow?.setVisible(false).setAlpha(0).setScale(1);
     this.abortConfirmLeaveButton?.setVisible(false).setAlpha(0).setScale(1).setTint(0x963948);
@@ -2949,30 +3195,19 @@ export class GameScene extends Phaser.Scene {
   createCrosshair() {
     this.crosshairContainer = this.add.container(PLAY_WIDTH * 0.5, this.scale.height * 0.5).setDepth(1000);
     this.crosshair = this.add.image(0, 0, "scope");
-    this.crosshairBaseScale = (PLAY_WIDTH * 0.12) / 128;
+    this.crosshairBaseScale = (PLAY_WIDTH * 0.08) / 128;
     this.crosshair.setScale(this.crosshairBaseScale);
 
     this.crosshairReticle = this.add.graphics();
-    this.crosshairReticle.lineStyle(3, 0xe5fbff, 0.98);
-    this.crosshairReticle.lineBetween(-42, 0, -22, 0);
-    this.crosshairReticle.lineBetween(42, 0, 22, 0);
-    this.crosshairReticle.lineBetween(0, -42, 0, -22);
-    this.crosshairReticle.lineBetween(0, 42, 0, 22);
-    this.crosshairReticle.lineStyle(2, 0x9ce9ff, 0.82);
-    this.crosshairReticle.lineBetween(-30, -30, -18, -18);
-    this.crosshairReticle.lineBetween(30, -30, 18, -18);
-    this.crosshairReticle.lineBetween(-30, 30, -18, 18);
-    this.crosshairReticle.lineBetween(30, 30, 18, 18);
-    this.crosshairReticle.fillStyle(0xff6b74, 0.9);
-    this.crosshairReticle.fillCircle(0, 0, 1.8);
+    this.redrawCrosshairReticle(0, false);
     this.crosshairReticle.setAlpha(0.95);
 
     this.crosshairHitMarker = this.add.graphics();
-    this.crosshairHitMarker.lineStyle(3, 0xffffff, 0.95);
-    this.crosshairHitMarker.lineBetween(-13, -13, -4, -4);
-    this.crosshairHitMarker.lineBetween(13, -13, 4, -4);
-    this.crosshairHitMarker.lineBetween(-13, 13, -4, 4);
-    this.crosshairHitMarker.lineBetween(13, 13, 4, 4);
+    this.crosshairHitMarker.lineStyle(2.6, 0xff747d, 0.96);
+    this.crosshairHitMarker.lineBetween(-9, -9, -3, -3);
+    this.crosshairHitMarker.lineBetween(9, -9, 3, -3);
+    this.crosshairHitMarker.lineBetween(-9, 9, -3, 3);
+    this.crosshairHitMarker.lineBetween(9, 9, 3, 3);
     this.crosshairHitMarker.setAlpha(0);
 
     this.crosshairContainer.add([this.crosshair, this.crosshairReticle, this.crosshairHitMarker]);
@@ -2983,14 +3218,46 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  redrawCrosshairReticle(spread = 0, isHitFlash = false) {
+    if (!this.crosshairReticle?.active) {
+      return;
+    }
+
+    const clampedSpread = Phaser.Math.Clamp(spread, 0, 1.8);
+    const armGap = 12 + clampedSpread * 10;
+    const armLength = 14;
+    const diagGap = 18 + clampedSpread * 7;
+    const diagLength = 6;
+    const primaryColor = isHitFlash ? 0xff4f5d : 0xe5fbff;
+    const secondaryColor = isHitFlash ? 0xff8b95 : 0x9ce9ff;
+    const dotColor = isHitFlash ? 0xff424f : 0xff6b74;
+
+    this.crosshairReticle.clear();
+    this.crosshairReticle.lineStyle(2.5, primaryColor, 0.97);
+    this.crosshairReticle.lineBetween(-(armGap + armLength), 0, -armGap, 0);
+    this.crosshairReticle.lineBetween(armGap + armLength, 0, armGap, 0);
+    this.crosshairReticle.lineBetween(0, -(armGap + armLength), 0, -armGap);
+    this.crosshairReticle.lineBetween(0, armGap + armLength, 0, armGap);
+    this.crosshairReticle.lineStyle(1.7, secondaryColor, 0.86);
+    this.crosshairReticle.lineBetween(-(diagGap + diagLength), -(diagGap + diagLength), -diagGap, -diagGap);
+    this.crosshairReticle.lineBetween(diagGap + diagLength, -(diagGap + diagLength), diagGap, -diagGap);
+    this.crosshairReticle.lineBetween(-(diagGap + diagLength), diagGap + diagLength, -diagGap, diagGap);
+    this.crosshairReticle.lineBetween(diagGap + diagLength, diagGap + diagLength, diagGap, diagGap);
+    this.crosshairReticle.fillStyle(dotColor, 0.96);
+    this.crosshairReticle.fillCircle(0, 0, 1.5);
+  }
+
   playCrosshairShotFeedback(didHitEnemy, isGrenade) {
     if (!this.crosshair?.active) {
       return;
     }
 
-    const spreadScale = isGrenade ? 1.22 : 1.14;
-    const recoilY = isGrenade ? -4 : -2.5;
-    const recoilAngle = isGrenade ? 2.8 : 1.4;
+    const spreadScale = isGrenade ? 1.18 : 1.12;
+    const recoilY = isGrenade ? -3.8 : -2.4;
+    const recoilAngle = isGrenade ? 2.4 : 1.4;
+    const spreadKick = isGrenade ? 1.05 : 0.72;
+    this.crosshairSpread = Phaser.Math.Clamp(this.crosshairSpread + spreadKick, 0, 1.8);
+
     this.tweens.killTweensOf(this.crosshair);
     this.crosshair.setScale(this.crosshairBaseScale);
     this.crosshair.setY(0);
@@ -3011,12 +3278,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.crosshair.setTint(0xff6a78);
-    this.time.delayedCall(95, () => {
-      if (this.crosshair?.active) {
-        this.crosshair.clearTint();
-      }
-    });
+    this.crosshairHitFlashUntilMs = this.time.now + 180;
 
     if (!this.crosshairHitMarker?.active) {
       return;
@@ -3024,13 +3286,13 @@ export class GameScene extends Phaser.Scene {
 
     this.tweens.killTweensOf(this.crosshairHitMarker);
     this.crosshairHitMarker.setAlpha(1);
-    this.crosshairHitMarker.setScale(0.72);
+    this.crosshairHitMarker.setScale(0.76);
     this.tweens.add({
       targets: this.crosshairHitMarker,
       alpha: 0,
-      scaleX: 1.13,
-      scaleY: 1.13,
-      duration: 130,
+      scaleX: 1.16,
+      scaleY: 1.16,
+      duration: 150,
       ease: "Quad.Out"
     });
   }
@@ -3074,6 +3336,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.ensureWeaponAnimations();
+    this.weaponBreathPhase = Phaser.Math.FloatBetween(0, Math.PI * 2);
     this.weaponBaseX = isCenteredWeaponView ? this.playWidth * 0.5 : this.playWidth - 6;
     this.weaponBaseY = isCenteredWeaponView
       ? this.scale.height - UI_LAYOUT.bottomHudYInset - (this.isCustomM203WeaponViewActive ? 140 : 170)
@@ -3559,6 +3822,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   updateWeaponAimTarget() {
+    const nowMs = this.time.now;
     const aimX = Phaser.Math.Clamp(this.crosshairContainer?.x ?? this.input.activePointer?.worldX ?? this.playWidth * 0.5, 0, this.playWidth);
     const aimY = Phaser.Math.Clamp(
       this.crosshairContainer?.y ?? this.input.activePointer?.worldY ?? this.scale.height * 0.5,
@@ -3567,9 +3831,15 @@ export class GameScene extends Phaser.Scene {
     );
     const normalizedX = ((aimX / this.playWidth) - 0.5) * 2;
     const normalizedY = ((aimY / this.scale.height) - 0.5) * 2;
-    this.weaponAimTargetX = this.weaponBaseX + normalizedX * WEAPON_AIM_FOLLOW_X_MAX + this.weaponRecoilX;
-    this.weaponAimTargetY = this.weaponBaseY + normalizedY * WEAPON_AIM_FOLLOW_Y_MAX + this.weaponRecoilY;
-    this.weaponAimTargetAngle = normalizedX * WEAPON_AIM_FOLLOW_ANGLE_MAX + normalizedY * 1.5 + this.weaponRecoilAngle;
+    const breath = Math.sin(nowMs * WEAPON_IDLE_BREATH_SPEED + this.weaponBreathPhase);
+    const sway = Math.sin(nowMs * (WEAPON_IDLE_BREATH_SPEED * 0.72) + this.weaponBreathPhase * 0.61);
+    const breathingOffsetX = sway * WEAPON_IDLE_SWAY_X_MAX;
+    const breathingOffsetY = breath * WEAPON_IDLE_SWAY_Y_MAX;
+    const breathingAngle = sway * WEAPON_IDLE_SWAY_ANGLE_MAX;
+    this.weaponAimTargetX = this.weaponBaseX + normalizedX * WEAPON_AIM_FOLLOW_X_MAX + this.weaponRecoilX + breathingOffsetX;
+    this.weaponAimTargetY = this.weaponBaseY + normalizedY * WEAPON_AIM_FOLLOW_Y_MAX + this.weaponRecoilY + breathingOffsetY;
+    this.weaponAimTargetAngle =
+      normalizedX * WEAPON_AIM_FOLLOW_ANGLE_MAX + normalizedY * 1.5 + this.weaponRecoilAngle + breathingAngle;
   }
 
   updateWeaponAimFollow() {
@@ -3604,21 +3874,21 @@ export class GameScene extends Phaser.Scene {
   createUiBlurBackdrop(centerX, centerY, width, height, depth, cornerRadius = 12) {
     const nodes = [];
     const layers = [
-      { expand: 24, alpha: 0.045 },
-      { expand: 14, alpha: 0.06 },
-      { expand: 6, alpha: 0.08 }
+      { expand: 24, alpha: 0.05 },
+      { expand: 14, alpha: 0.07 },
+      { expand: 6, alpha: 0.09 }
     ];
 
     layers.forEach((layer) => {
       const node = this.add
-        .rectangle(centerX, centerY, width + layer.expand, height + layer.expand, 0x06111a, layer.alpha)
+        .rectangle(centerX, centerY, width + layer.expand, height + layer.expand, 0x110d08, layer.alpha)
         .setDepth(depth)
         .setOrigin(0.5);
       nodes.push(node);
     });
 
     const rim = this.add.graphics();
-    rim.fillStyle(0x98d8ff, 0.04);
+    rim.fillStyle(0xc7a56a, 0.06);
     rim.fillRoundedRect(
       centerX - width * 0.5 - 2,
       centerY - height * 0.5 - 2,
@@ -3677,7 +3947,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     const frame = this.add.graphics().setDepth(depth + 1);
-    frame.lineStyle(2, 0x1f3f4a, 0.42);
+    frame.lineStyle(2, 0x3f3627, 0.52);
     frame.strokeRect(10, 10, this.playWidth - 20, this.scale.height - 20);
     this.vignetteOverlays.push(frame);
   }
@@ -3694,12 +3964,12 @@ export class GameScene extends Phaser.Scene {
     const ctx = grain.getContext();
     ctx.clearRect(0, 0, width, height);
 
-    const dotCount = 2900;
+    const dotCount = 2400;
     for (let i = 0; i < dotCount; i += 1) {
       const x = Math.floor(Math.random() * width);
       const y = Math.floor(Math.random() * height);
-      const alpha = Math.random() * 0.26;
-      const value = 155 + Math.floor(Math.random() * 100);
+      const alpha = Math.random() * 0.16;
+      const value = 150 + Math.floor(Math.random() * 90);
       ctx.fillStyle = `rgba(${value}, ${value}, ${value}, ${alpha})`;
       ctx.fillRect(x, y, 1, 1);
     }
@@ -3713,9 +3983,30 @@ export class GameScene extends Phaser.Scene {
     this.grainOverlay = this.add
       .tileSprite(this.playWidth * 0.5, this.scale.height * 0.5, this.playWidth, this.scale.height, key)
       .setDepth(915)
-      .setAlpha(0.18)
+      .setAlpha(SCREEN_GRAIN_ALPHA_BASE)
       .setScrollFactor(0)
       .setBlendMode(Phaser.BlendModes.NORMAL);
+  }
+
+  createScreenFxOverlays() {
+    this.screenFxPhase = Phaser.Math.FloatBetween(0, Math.PI * 2);
+
+    this.lightFlickerOverlay = this.add
+      .rectangle(this.playWidth * 0.5, this.scale.height * 0.5, this.playWidth, this.scale.height, 0xffd9a8, 1)
+      .setDepth(912)
+      .setAlpha(SCREEN_LIGHT_FLICKER_ALPHA_BASE)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
+    this.chromaticAberrationRed = this.add.graphics().setDepth(913).setBlendMode(Phaser.BlendModes.ADD);
+    this.chromaticAberrationRed.lineStyle(18, 0xff4f5d, 1);
+    this.chromaticAberrationRed.strokeRect(0, 0, this.playWidth, this.scale.height);
+    this.chromaticAberrationRed.setAlpha(SCREEN_CHROMATIC_ABERRATION_ALPHA_BASE);
+
+    this.chromaticAberrationCyan = this.add.graphics().setDepth(913).setBlendMode(Phaser.BlendModes.ADD);
+    this.chromaticAberrationCyan.lineStyle(18, 0x61d8ff, 1);
+    this.chromaticAberrationCyan.strokeRect(0, 0, this.playWidth, this.scale.height);
+    this.chromaticAberrationCyan.setAlpha(SCREEN_CHROMATIC_ABERRATION_ALPHA_BASE);
   }
 
   ensureWorldAtmosphereTextures() {
@@ -3834,16 +4125,43 @@ export class GameScene extends Phaser.Scene {
   }
 
   updateAtmosphericHudEffects(delta) {
+    this.updateBackgroundBreathing();
     this.updateWorldAtmosphere(delta);
+    const nowMs = this.time.now;
 
     if (this.grainOverlay?.active) {
       this.grainOverlay.tilePositionX += delta * 0.04;
       this.grainOverlay.tilePositionY += delta * 0.025;
-      this.grainOverlay.alpha = 0.13 + (Math.sin(this.time.now * 0.009) + 1) * 0.05;
+      this.grainOverlay.alpha = SCREEN_GRAIN_ALPHA_BASE + (Math.sin(nowMs * 0.009 + this.screenFxPhase) + 1) * SCREEN_GRAIN_ALPHA_SWAY;
+    }
+
+    if (this.lightFlickerOverlay?.active) {
+      const flicker =
+        Math.sin(nowMs * 0.013 + this.screenFxPhase) * 0.55 +
+        Math.sin(nowMs * 0.031 + this.screenFxPhase * 0.5) * 0.45;
+      this.lightFlickerOverlay.alpha = SCREEN_LIGHT_FLICKER_ALPHA_BASE + (flicker + 1) * 0.5 * SCREEN_LIGHT_FLICKER_ALPHA_SWAY;
+    }
+
+    if (this.chromaticAberrationRed?.active && this.chromaticAberrationCyan?.active) {
+      const offsetX = Math.sin(nowMs * 0.0039 + this.screenFxPhase) * SCREEN_CHROMATIC_ABERRATION_OFFSET_MAX;
+      const offsetY = Math.cos(nowMs * 0.0031 + this.screenFxPhase * 0.8) * SCREEN_CHROMATIC_ABERRATION_OFFSET_MAX * 0.55;
+      const aberrationAlpha =
+        SCREEN_CHROMATIC_ABERRATION_ALPHA_BASE +
+        (Math.sin(nowMs * 0.0044 + this.screenFxPhase) + 1) * 0.5 * SCREEN_CHROMATIC_ABERRATION_ALPHA_SWAY;
+      this.chromaticAberrationRed.setPosition(offsetX, offsetY).setAlpha(aberrationAlpha);
+      this.chromaticAberrationCyan.setPosition(-offsetX, -offsetY).setAlpha(aberrationAlpha);
     }
 
     if (this.crosshairReticle?.active) {
-      this.crosshairReticle.alpha = 0.82 + (Math.sin(this.time.now * 0.0085) + 1) * 0.1;
+      this.crosshairSpread = Phaser.Math.Clamp(this.crosshairSpread - delta * 0.003, 0, 1.8);
+      const isHitFlash = this.time.now <= this.crosshairHitFlashUntilMs;
+      this.redrawCrosshairReticle(this.crosshairSpread, isHitFlash);
+      this.crosshairReticle.alpha = 0.86 + (Math.sin(this.time.now * 0.0085) + 1) * 0.08;
+      if (isHitFlash) {
+        this.crosshair?.setTint(0xff4f5d);
+      } else {
+        this.crosshair?.clearTint();
+      }
     }
   }
 
@@ -3872,6 +4190,53 @@ export class GameScene extends Phaser.Scene {
       band.scaleX = 1 + Math.sin(timeMs * 0.0025 + band.__phase) * 0.07;
       band.scaleY = 0.95 + Math.cos(timeMs * 0.0022 + band.__phase) * 0.06;
     });
+  }
+
+  cacheBackgroundBreathingBase() {
+    if (!this.backgroundImage?.active) {
+      return;
+    }
+
+    this.backgroundBaseX = this.backgroundImage.x;
+    this.backgroundBaseY = this.backgroundImage.y;
+    this.backgroundBaseScaleX = this.backgroundImage.scaleX;
+    this.backgroundBaseScaleY = this.backgroundImage.scaleY;
+    this.backgroundBreathPhase = Phaser.Math.FloatBetween(0, Math.PI * 2);
+  }
+
+  resetBackgroundBreathingTransform() {
+    if (!this.backgroundImage?.active) {
+      return;
+    }
+
+    this.backgroundImage.setPosition(this.backgroundBaseX, this.backgroundBaseY);
+    this.backgroundImage.setScale(this.backgroundBaseScaleX, this.backgroundBaseScaleY);
+  }
+
+  updateBackgroundBreathing() {
+    if (!this.backgroundImage?.active || !this.state) {
+      return;
+    }
+
+    const nowMs = this.time.now;
+    const isLowHp = this.state.hp <= LOW_HP_THRESHOLD;
+    const underFireBoost = nowMs - this.lastBackgroundHitAtMs <= 900;
+    const speed = (isLowHp ? 0.0017 : 0.0012) + (underFireBoost ? 0.00035 : 0);
+    const scaleAmplitude = (isLowHp ? 0.0066 : 0.0048) + (underFireBoost ? 0.0011 : 0);
+    const swayXAmplitude = (isLowHp ? 1.9 : 1.3) + (underFireBoost ? 0.6 : 0);
+    const swayYAmplitude = (isLowHp ? 1.2 : 0.8) + (underFireBoost ? 0.4 : 0);
+    const breath = Math.sin(nowMs * speed + this.backgroundBreathPhase);
+    const sway = Math.sin(nowMs * (speed * 0.67) + this.backgroundBreathPhase * 0.6);
+    const scale = 1 + breath * scaleAmplitude;
+
+    this.backgroundImage.setPosition(
+      this.backgroundBaseX + sway * swayXAmplitude,
+      this.backgroundBaseY + breath * swayYAmplitude
+    );
+    this.backgroundImage.setScale(
+      this.backgroundBaseScaleX * scale,
+      this.backgroundBaseScaleY * scale
+    );
   }
 
   startAmbientCameraShake() {
@@ -3943,7 +4308,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.sound.play("m203-fire", {
-      volume: 0.42
+      volume: getSfxOutputVolume(this.registry, 0.42)
     });
   }
 
@@ -3955,13 +4320,13 @@ export class GameScene extends Phaser.Scene {
 
   playEmptyFireSound() {
     this.sound.play("m203-empty", {
-      volume: 0.62
+      volume: getSfxOutputVolume(this.registry, 0.62)
     });
   }
 
   playGrenadeSound() {
     this.sound.play("m203-grenade", {
-      volume: 1
+      volume: getSfxOutputVolume(this.registry, 1)
     });
   }
 
@@ -3976,7 +4341,7 @@ export class GameScene extends Phaser.Scene {
     const volume = isGrenadeEnemy ? 0.75 : 0.3;
 
     const sound = this.sound.add(soundKey, {
-      volume
+      volume: getSfxOutputVolume(this.registry, volume)
     });
     enemy.fireSound = sound;
     sound.once("complete", () => {
@@ -4003,7 +4368,9 @@ export class GameScene extends Phaser.Scene {
 
   startBackgroundMusic() {
     const existingMusic = this.sound.get("bg-music");
+    const musicVolume = getMusicOutputVolume(this.registry, 0.4);
     if (existingMusic) {
+      existingMusic.setVolume(musicVolume);
       this.ensureMusicLoopMarker(existingMusic);
       if (existingMusic.isPlaying) {
         if (existingMusic.currentMarker?.name === MUSIC_LOOP_MARKER) {
@@ -4016,7 +4383,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const music = this.sound.add("bg-music", {
-      volume: 0.4
+      volume: musicVolume
     });
     this.ensureMusicLoopMarker(music);
     music.play(MUSIC_LOOP_MARKER);
